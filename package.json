@@ -1,0 +1,38 @@
+{
+  "name": "puredata-mcp-server",
+  "version": "0.1.0",
+  "description": "MCP Server for Pure Data — parse, generate, analyze, and control Pd patches with AI",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "puredata-mcp-server": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "dev": "tsup src/index.ts --format esm --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "inspect": "npx @modelcontextprotocol/inspector node dist/index.js",
+    "lint": "tsc --noEmit"
+  },
+  "keywords": [
+    "mcp",
+    "pure-data",
+    "pd",
+    "midi",
+    "audio",
+    "synthesis",
+    "osc"
+  ],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^3.0.0"
+  }
+}
