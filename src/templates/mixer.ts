@@ -29,21 +29,28 @@ export function buildMixer(params: MixerParams = {}): RackableSpec {
     y: 10,
   });
 
-  // Per channel: 3 nodes (inlet~, floatatom, *~)
+  // Per channel: 5 nodes (inlet~, loadbang, msg, floatatom, *~)
+  const NODES_PER_CH = 5;
   const channelStartIdx = 1;
   const inletIndices: number[] = [];
   for (let ch = 0; ch < channels; ch++) {
     const x = 50 + ch * 120;
     const baseY = 50;
 
+    const chBase = channelStartIdx + ch * NODES_PER_CH;
+
     // inlet~
     inletIndices.push(nodes.length);
     nodes.push({ type: "obj", name: "inlet~", x, y: baseY });
 
+    // loadbang → msg 0.8 → floatatom (initialize volume)
+    nodes.push({ type: "obj", name: "loadbang", x: x + 60, y: baseY });
+    nodes.push({ type: "msg", args: [0.8], x: x + 60, y: baseY + 20 });
+
     // floatatom for volume (width 5, range 0-1)
     nodes.push({
       type: "floatatom",
-      args: [5, 0, 1, 0, "-", "-", "-", 0],
+      args: [5, 0, 1, 0, "-", "-", "-"],
       x,
       y: baseY + 40,
     });
@@ -51,29 +58,34 @@ export function buildMixer(params: MixerParams = {}): RackableSpec {
     // *~ for volume scaling
     nodes.push({ type: "obj", name: "*~", x, y: baseY + 80 });
 
-    const chBase = channelStartIdx + ch * 3;
+    // loadbang → msg
+    connections.push({ from: chBase + 1, to: chBase + 2 });
+    // msg → floatatom
+    connections.push({ from: chBase + 2, to: chBase + 3 });
     // inlet~ → *~ inlet 0
-    connections.push({ from: chBase, to: chBase + 2 });
+    connections.push({ from: chBase, to: chBase + 4 });
     // floatatom → *~ inlet 1
-    connections.push({ from: chBase + 1, to: chBase + 2, inlet: 1 });
+    connections.push({ from: chBase + 3, to: chBase + 4, inlet: 1 });
   }
 
   // Summing chain: chained +~ nodes
   // First +~ takes channel 0 and channel 1 outputs
   // Each subsequent +~ takes previous sum + next channel
-  const sumStartIdx = channelStartIdx + channels * 3;
+  const sumStartIdx = channelStartIdx + channels * NODES_PER_CH;
   let dacIdx: number;
   let lastSumIdx: number;
+
+  // Helper: get the *~ (output) node index for a given channel
+  const chOutIdx = (ch: number) => channelStartIdx + ch * NODES_PER_CH + 4;
 
   if (channels === 1) {
     // Single channel: no summing needed, go direct to dac~
     dacIdx = sumStartIdx;
-    lastSumIdx = channelStartIdx + 2; // *~ of channel 0 is the "last sum"
+    lastSumIdx = chOutIdx(0); // *~ of channel 0 is the "last sum"
     nodes.push({ type: "obj", name: "dac~", x: 50, y: 50 + 160 });
 
-    const ch0Out = channelStartIdx + 2; // *~ of channel 0
-    connections.push({ from: ch0Out, to: dacIdx });
-    connections.push({ from: ch0Out, to: dacIdx, inlet: 1 });
+    connections.push({ from: chOutIdx(0), to: dacIdx });
+    connections.push({ from: chOutIdx(0), to: dacIdx, inlet: 1 });
   } else {
     // Multiple channels: sum them
     const numSumNodes = channels - 1;
@@ -88,18 +100,15 @@ export function buildMixer(params: MixerParams = {}): RackableSpec {
 
     // First +~: channel 0 + channel 1
     const firstSumIdx = sumStartIdx;
-    const ch0Out = channelStartIdx + 2; // *~ of channel 0
-    const ch1Out = channelStartIdx + 3 + 2; // *~ of channel 1
-    connections.push({ from: ch0Out, to: firstSumIdx });
-    connections.push({ from: ch1Out, to: firstSumIdx, inlet: 1 });
+    connections.push({ from: chOutIdx(0), to: firstSumIdx });
+    connections.push({ from: chOutIdx(1), to: firstSumIdx, inlet: 1 });
 
     // Subsequent +~: previous sum + next channel
     for (let i = 2; i < channels; i++) {
       const prevSumIdx = sumStartIdx + i - 2;
       const curSumIdx = sumStartIdx + i - 1;
-      const chOut = channelStartIdx + i * 3 + 2; // *~ of channel i
       connections.push({ from: prevSumIdx, to: curSumIdx });
-      connections.push({ from: chOut, to: curSumIdx, inlet: 1 });
+      connections.push({ from: chOutIdx(i), to: curSumIdx, inlet: 1 });
     }
 
     // dac~ after all summing
