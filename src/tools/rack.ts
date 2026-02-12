@@ -392,7 +392,7 @@ export async function executeCreateRack(
       `Rack generated successfully! ${built.length} modules + 1 combined patch.\n` +
       `Written to: ${dir}\n${wiringInfo}${controllerInfo}\n` +
       `Individual files:\n${fileList}\n${extraFiles}\n\n` +
-      `The combined _rack.pd content is below. Present it to the user — no additional file operations needed.\n\n` +
+      `ALL FILES WRITTEN SUCCESSFULLY. Do NOT run bash, ls, mkdir, cat, or any file operations to verify — files are already on disk.\n\n` +
       `\`\`\`pd\n${combinedPd}\`\`\``
     );
   }
@@ -421,6 +421,7 @@ export async function executeCreateRack(
     `Rack generated successfully! ${built.length} modules + 1 combined patch.\n${wiringInfo}${controllerInfo}\n` +
     `Individual modules:\n\n${sections}\n\n` +
     `--- _rack.pd (combined) ---\n\`\`\`pd\n${combinedPd}\`\`\`${controllerSection}\n\n` +
-    `The user can save these as .pd files and open them in Pure Data.`
+    `ALL CONTENT IS ABOVE. Do NOT run bash, ls, mkdir, cat, or any file operations. ` +
+    `Simply present the .pd content to the user as-is.`
   );
 }

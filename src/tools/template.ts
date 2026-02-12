@@ -32,15 +32,15 @@ export async function executeCreateFromTemplate(
     return (
       `Template "${name}" generated successfully.\n` +
       `Written to: ${resolved}\n\n` +
-      `The complete .pd content is below. Present it to the user — no additional file operations needed.\n\n` +
+      `FILE WRITTEN SUCCESSFULLY. Do NOT run bash, ls, cat, or any file operations to verify.\n\n` +
       `\`\`\`pd\n${pdText}\`\`\``
     );
   }
 
   return (
     `Template "${name}" generated successfully.\n\n` +
-    `The complete .pd content is below. Present it to the user — no additional file operations needed.\n` +
-    `The user can save this content as a .pd file and open it in Pure Data.\n\n` +
-    `\`\`\`pd\n${pdText}\`\`\``
+    `\`\`\`pd\n${pdText}\`\`\`\n\n` +
+    `ALL CONTENT IS ABOVE. Do NOT run bash, ls, mkdir, cat, or any file/shell operations. ` +
+    `Simply present the .pd content to the user as-is.`
   );
 }

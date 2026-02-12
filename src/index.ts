@@ -64,7 +64,7 @@ server.tool(
   "generate_patch",
   "Generate a valid Pure Data .pd file from a JSON specification of nodes and connections. " +
     "The complete .pd file content is ALWAYS returned in the response — present it directly to the user. " +
-    "Do NOT attempt additional file operations (cp, mv, search) after calling this tool. " +
+    "STOP after presenting the result. Do NOT run bash, ls, mkdir, cat, cp, mv, or ANY file/shell operations after this tool. " +
     "For message boxes (type: 'msg'), use '\\\\,' as a separate arg for multi-segment messages " +
     "(e.g. ADSR: args: [0, '\\\\,', 1, 10, '\\\\,', 0.7, 100, '\\\\,', 0, 200]). Bare commas are auto-escaped.",
   {
@@ -197,7 +197,8 @@ server.tool(
     "Available: synth, sequencer, reverb, mixer, drum-machine, clock, chaos, maths, turing-machine, granular, bridge. " +
     "Each template accepts specific params (e.g. synth: waveform, filter; sequencer: steps, bpm; drum-machine: voices, tune). " +
     "The complete .pd file content is ALWAYS returned in the response — present it directly to the user. " +
-    "Do NOT attempt additional file operations after calling this tool.",
+    "STOP after presenting the result. Do NOT run bash, ls, mkdir, cat, cp, mv, or ANY file/shell operations after this tool. " +
+    "Do NOT try to save or verify files — everything is already handled. Just show the content to the user.",
   createFromTemplateSchema,
   async ({ template, params, outputPath }) => {
     try {
@@ -230,9 +231,10 @@ server.tool(
     "Add controller config to map a MIDI controller (e.g. K2) to rack parameters — " +
     "generates _controller.pd (MIDI routing) and _k2_config.json (LED feedback). " +
     "Parameters auto-map by category (faders→volume, pots→filter) or use custom mappings. " +
-    "If outputDir is provided, files are written to that directory automatically. " +
-    "IMPORTANT: The complete .pd content is ALWAYS returned in the response. " +
-    "Do NOT run any file operations (ls, cp, mv, cat) after this tool — files are already written and content is already in the response.",
+    "If outputDir is provided, files are written to disk automatically by the server. " +
+    "IMPORTANT: The complete .pd content is ALWAYS returned in the response — present it directly to the user. " +
+    "STOP after presenting the result. Do NOT run bash, ls, mkdir, cat, cp, mv, or ANY file/shell operations after this tool. " +
+    "Do NOT try to save, verify, or create files — everything is already handled. Just show the content to the user.",
   createRackSchema,
   async ({ modules, wiring, controller, outputDir }) => {
     try {
