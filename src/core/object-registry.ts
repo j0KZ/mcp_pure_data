@@ -92,6 +92,7 @@ const REGISTRY_DATA: PdObjectDef[] = [
       defaultOutlets: 1,
     }),
   ),
+  { name: "random", category: "math", description: "Random integer generator", signalType: "control", inlets: fixed(2), outlets: fixed(1), defaultInlets: 2, defaultOutlets: 1 },
 
   // ---- MIDI ----
   { name: "notein", category: "midi", description: "Receive MIDI note", signalType: "control", inlets: fixed(0), outlets: fixed(3), defaultInlets: 0, defaultOutlets: 3 },
@@ -143,6 +144,18 @@ const REGISTRY_DATA: PdObjectDef[] = [
       name,
       category: "audio",
       description: `Audio math: ${name}`,
+      signalType: "audio",
+      inlets: fixed(2),
+      outlets: fixed(1),
+      defaultInlets: 2,
+      defaultOutlets: 1,
+    }),
+  ),
+  ...(["==~", "!=~", ">~", "<~", ">=~", "<=~"] as const).map(
+    (name): PdObjectDef => ({
+      name,
+      category: "audio",
+      description: `Audio comparison: ${name}`,
       signalType: "audio",
       inlets: fixed(2),
       outlets: fixed(1),

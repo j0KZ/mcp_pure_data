@@ -5,7 +5,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-Protocol-blueviolet)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-91%2F91-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-296%2F296-brightgreen)]()
 
 ---
 
@@ -16,45 +16,52 @@ An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that 
 - **Read** any `.pd` file and explain its signal flow in plain language
 - **Generate** valid patches from natural language descriptions
 - **Analyze** patches for broken connections, orphan objects, and complexity metrics
-- **Control** running Pd instances via OSC/FUDI in real-time
+- **Template** 10 parameterized instruments (synth, sequencer, drums, reverb, etc.)
+- **Rack** assemble multiple modules with inter-module wiring (Eurorack-style)
 
-> *"Create a 16-step MIDI sequencer at 120 BPM"* → valid `.pd` file that opens in Pure Data
+> *"Create a rack with clock, sequencer, synth with saw wave, reverb, and mixer — wire them together"* → complete `.pd` rack that opens in Pure Data
 
 ---
 
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                   Claude / AI Client                │
-└──────────────────────┬──────────────────────────────┘
-                       │ MCP (stdio)
-┌──────────────────────▼──────────────────────────────┐
-│              puredata-mcp-server                     │
-│                                                      │
-│  ┌─────────────┐  ┌──────────────┐  ┌────────────┐  │
-│  │ parse_patch  │  │generate_patch│  │  analyze /  │  │
-│  │             │  │              │  │  validate   │  │
-│  └──────┬──────┘  └──────┬───────┘  └─────┬──────┘  │
-│         │                │                │          │
-│  ┌──────▼────────────────▼────────────────▼──────┐  │
-│  │                  Core Engine                   │  │
-│  │  ┌──────────┐  ┌────────────┐  ┌───────────┐  │  │
-│  │  │  Parser  │  │ Serializer │  │ Validator  │  │  │
-│  │  │ .pd→AST  │  │  AST→.pd   │  │  Checks   │  │  │
-│  │  └──────────┘  └────────────┘  └───────────┘  │  │
-│  └───────────────────────────────────────────────┘  │
-│                                                      │
-│  ┌──────────────────────────────────────────────┐   │
-│  │           Pd Object Registry                  │   │
-│  │   ~100 vanilla objects · inlet/outlet metadata│   │
-│  └──────────────────────────────────────────────┘   │
-└──────────────────────────────────────────────────────┘
-                       │ OSC / FUDI (planned)
-┌──────────────────────▼──────────────────────────────┐
-│               Pure Data Instance                     │
-│          (running patch with netreceive)             │
-└─────────────────────────────────────────────────────┘
++-----------------------------------------------------+
+|                   Claude / AI Client                 |
++------------------------+----------------------------+
+                         | MCP (stdio)
++------------------------v----------------------------+
+|              puredata-mcp-server                     |
+|                                                      |
+|  +-------------+  +--------------+  +------------+  |
+|  | parse_patch  |  |generate_patch|  |  analyze / |  |
+|  |              |  |              |  |  validate  |  |
+|  +------+-------+  +------+------+  +-----+------+  |
+|         |                 |               |          |
+|  +------v-----------------v---------------v------+   |
+|  |                  Core Engine                   |  |
+|  |  +----------+  +------------+  +-----------+  |   |
+|  |  |  Parser  |  | Serializer |  | Validator |  |   |
+|  |  | .pd->AST |  |  AST->.pd  |  |  Checks   |  |   |
+|  |  +----------+  +------------+  +-----------+  |   |
+|  +-----------------------------------------------+   |
+|                                                      |
+|  +------------------------------------------------+  |
+|  |         Template Engine (10 templates)          |  |
+|  |  synth | seq | drums | reverb | mixer | clock   |  |
+|  |  chaos | maths | turing-machine | granular      |  |
+|  +------------------------+-----------------------+   |
+|                           |                          |
+|  +------------------------v-----------------------+  |
+|  |              Rack Builder + Wiring             |  |
+|  |  throw~/catch~ (audio) | send/receive (control)|  |
+|  +------------------------------------------------+  |
+|                                                      |
+|  +------------------------------------------------+  |
+|  |           Pd Object Registry                    |  |
+|  |   ~100 vanilla objects - inlet/outlet metadata  |  |
+|  +------------------------------------------------+  |
++------------------------------------------------------+
 ```
 
 ---
@@ -67,7 +74,7 @@ Parses Pure Data's text-based format into a typed Abstract Syntax Tree with supp
 - Nested subpatches (recursive canvas stack)
 - All connection types (signal and control)
 - Escaped semicolons, multi-line statements
-- Round-trip fidelity (parse → serialize → parse = identical structure)
+- Round-trip fidelity (parse -> serialize -> parse = identical structure)
 
 ### Patch Generator — From JSON spec to valid `.pd`
 ```json
@@ -88,16 +95,55 @@ Parses Pure Data's text-based format into a typed Abstract Syntax Tree with supp
 Produces a `.pd` file that opens cleanly in Pure Data 0.54+.
 
 ### Object Registry
-Categorized database of ~95 Pd-vanilla objects across math, MIDI, time, audio, control, data, GUI, and subpatch categories. Each entry includes inlet/outlet counts (with variable-count support for objects like `select`, `pack`, `trigger`), aliases, and signal type classification. Used for validation, analysis, and object discovery.
+Categorized database of ~95 Pd-vanilla objects across math, MIDI, time, audio, control, data, GUI, and subpatch categories. Each entry includes inlet/outlet counts (with variable-count support for objects like `select`, `pack`, `trigger`), aliases, and signal type classification.
 
 ### Patch Validator — Structural integrity checks
-Detects 9 categories of issues across your patch:
-- **Broken connections** — source/target node doesn't exist, outlet/inlet index out of bounds
-- **Duplicate connections** — same wire appearing twice (usually a mistake)
-- **Unknown objects** — not in the Pd-vanilla registry (possible external or typo)
-- **Orphan objects** — no connections at all (with smart exceptions for wireless, GUI, data objects)
-- **Empty subpatches** — subpatch with zero nodes
-- **Missing DSP sink** — audio objects exist but no `dac~`, `writesf~`, etc.
+Detects 9 categories of issues: broken connections, duplicate connections, unknown objects, orphan objects, empty subpatches, missing DSP sinks.
+
+### Template Engine — 10 parameterized instruments
+
+Modular two-tier system: **modules** (oscillator, filter, VCA, envelope, delay, reverb) compose into **templates** via `compose()` with automatic index offsetting.
+
+| Template | Eurorack Analog | Key Parameters |
+|----------|----------------|----------------|
+| `synth` | Oscillator + Filter + VCA | `waveform`, `filter`, `envelope`, `frequency`, `cutoff`, `amplitude` |
+| `sequencer` | Step sequencer | `steps`, `bpm`, `notes`, `midiChannel`, `velocity` |
+| `drum-machine` | Analog drums | `voices` (bd/sn/hh/cp), `tune`, `decay`, `tone` |
+| `reverb` | Spring/plate reverb | `variant` (schroeder/simple), `roomSize`, `damping`, `wetDry` |
+| `mixer` | Mixer module | `channels` (1-16) |
+| `clock` | Master clock | `bpm`, `divisions` (e.g. [1,2,4,8]) |
+| `chaos` | Chaos/random CV | `outputs` (1-3), `speed`, `r` (logistic map parameter) |
+| `maths` | Function generator | `channels` (1-2), `rise`, `fall`, `cycle`, `outputRange` |
+| `turing-machine` | Turing Machine | `length`, `probability`, `range`, `offset` |
+| `granular` | Granular sampler | `grains`, `grainSize`, `pitch`, `position`, `freeze`, `wetDry` |
+
+### Rack Builder — Eurorack-style module assembly
+
+Generates individual `.pd` files per module + a combined `_rack.pd` with all modules side-by-side.
+
+**Inter-module wiring** connects modules via Pd bus objects:
+- **Audio** (signal rate): `throw~` / `catch~`
+- **Control** (message rate): `send` / `receive`
+
+```json
+{
+  "modules": [
+    { "template": "clock", "params": { "bpm": 140 }, "id": "clock" },
+    { "template": "sequencer", "params": { "steps": 8 }, "id": "seq" },
+    { "template": "synth", "params": { "waveform": "saw" }, "id": "synth" },
+    { "template": "reverb", "id": "reverb" },
+    { "template": "mixer", "params": { "channels": 2 }, "id": "mixer" }
+  ],
+  "wiring": [
+    { "from": "clock", "output": "beat_div1", "to": "seq", "input": "clock_in" },
+    { "from": "seq", "output": "note", "to": "synth", "input": "note" },
+    { "from": "synth", "output": "audio", "to": "reverb", "input": "audio_in" },
+    { "from": "reverb", "output": "audio", "to": "mixer", "input": "ch1" }
+  ]
+}
+```
+
+The wiring system handles connection redirection (no node removal), clock sync for self-clocking modules, audio fan-out, and table name deduplication.
 
 ### Patch Analyzer — Deep structural analysis
 - **Object counts** by category (audio, control, MIDI, math, etc.)
@@ -139,86 +185,60 @@ Open Claude Desktop and ask:
 
 > *"Parse the file /path/to/my-patch.pd and explain what it does"*
 
-> *"Generate a Pure Data patch with a 440Hz oscillator going through a low-pass filter to dac~"*
+> *"Create a rack with clock, sequencer, saw synth, reverb, and mixer — wire clock to sequencer, sequencer to synth, synth through reverb to mixer"*
 
 ---
 
 ## MCP Tools
 
 ### `parse_patch`
-
-Parse a `.pd` file and return a structured description of its contents.
+Parse a `.pd` file and return a structured description.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `source` | `string` | File path to a `.pd` file, or raw `.pd` text |
-
-**Output**: Structured markdown with objects, connections, signal flow, and comments.
-
-**Example prompt**: *"What does this patch do?"*
+| `source` | `string` | File path or raw `.pd` text |
 
 ### `generate_patch`
-
 Generate a valid `.pd` file from a JSON specification.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `title` | `string?` | Comment at the top of the patch |
-| `nodes` | `array` | Objects, messages, and other elements |
+| `title` | `string?` | Comment at the top |
+| `nodes` | `array` | Objects, messages, atoms |
 | `connections` | `array` | Wiring between nodes |
 | `outputPath` | `string?` | Write to file (optional) |
 
-**Example prompt**: *"Create a 4-voice polysynth with ADSR envelopes"*
-
 ### `validate_patch`
-
-Validate a `.pd` file for structural issues.
+Validate structural integrity (broken connections, orphans, missing sinks).
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `source` | `string` | File path to a `.pd` file, or raw `.pd` text |
-
-**Output**: Validation report with errors, warnings, and info grouped by severity.
-
-**Checks**: Broken connections, out-of-bounds inlets/outlets, duplicate wires, unknown objects, orphan nodes, empty subpatches, missing DSP sinks.
-
-**Example prompt**: *"Validate my patch and tell me what's broken"*
+| `source` | `string` | File path or raw `.pd` text |
 
 ### `analyze_patch`
-
-Analyze a `.pd` file for object counts, signal flow, DSP chains, and complexity.
+Object counts, signal flow graph, DSP chains, complexity score.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `source` | `string` | File path to a `.pd` file, or raw `.pd` text |
+| `source` | `string` | File path or raw `.pd` text |
 
-**Output**: Full analysis report — object counts by category, topological signal flow, detected audio chains, complexity score (0-100), and validation results.
+### `create_from_template`
+Generate a patch from a parameterized template (10 available).
 
-**Example prompt**: *"Analyze this patch — how complex is it and what's the signal flow?"*
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `template` | `string` | Template name (see table above) |
+| `params` | `object?` | Template-specific parameters |
+| `outputPath` | `string?` | Write to file (optional) |
 
-### Planned tools (Phase 3-5)
-| Tool | Purpose |
-|------|---------|
-| `create_from_template` | Generate from parameterized templates (synth, sequencer, etc.) |
-| `send_message` | OSC/FUDI messages to a running Pd instance |
+### `create_rack`
+Assemble multiple modules into a rack with inter-module wiring.
 
----
-
-## `.pd` File Format
-
-Pure Data uses a plain-text, line-based format:
-
-```
-#N canvas 0 50 800 600 12;           ← Canvas (window)
-#X obj 50 50 osc~ 440;              ← Object with arguments
-#X obj 50 100 *~ 0.1;               ← Audio multiply
-#X obj 50 150 dac~;                  ← Output to speakers
-#X connect 0 0 1 0;                  ← osc~ outlet 0 → *~ inlet 0
-#X connect 1 0 2 0;                  ← *~ → dac~ left channel
-#X connect 1 0 2 1;                  ← *~ → dac~ right channel
-```
-
-The parser handles the full syntax: subpatches (`#N canvas` ... `#X restore`), arrays (`#A`), GUI objects, escaped semicolons, and more.
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `modules` | `array` | Module specs: `{ template, params?, id?, filename? }` |
+| `wiring` | `array?` | Connections: `{ from, output, to, input }` |
+| `outputDir` | `string?` | Directory to write all files |
 
 ---
 
@@ -226,38 +246,77 @@ The parser handles the full syntax: subpatches (`#N canvas` ... `#X restore`), a
 
 ```
 src/
-├── index.ts              # MCP server entry — 4 tools registered, stdio transport
-├── types.ts              # PdPatch, PdCanvas, PdNode, PdConnection interfaces
-├── constants.ts          # Format constants, layout defaults
-├── core/
-│   ├── parser.ts         # .pd text → AST (statement splitter, canvas stack)
-│   ├── serializer.ts     # AST → .pd text + buildPatch() from spec
-│   ├── object-registry.ts # ~95 Pd-vanilla objects with port counts + aliases
-│   └── validator.ts      # 9 structural checks (broken connections, orphans, etc.)
-├── schemas/
-│   ├── patch.ts          # Zod schemas for parse/generate tools
-│   └── analyze.ts        # Zod schemas for validate/analyze tools
-├── tools/
-│   ├── parse.ts          # parse_patch tool
-│   ├── generate.ts       # generate_patch tool
-│   ├── validate.ts       # validate_patch tool
-│   └── analyze.ts        # analyze_patch tool (signal flow, DSP chains, complexity)
-└── utils/
-    └── resolve-source.ts # Shared file-path vs raw-text resolver
+  index.ts                # MCP server — 6 tools, stdio transport
+  types.ts                # PdPatch, PdCanvas, PdNode, PdConnection
+  constants.ts            # Format constants, layout defaults
+  core/
+    parser.ts             # .pd text -> AST
+    serializer.ts         # AST -> .pd text + buildPatch()
+    object-registry.ts    # ~100 Pd-vanilla objects with port counts
+    validator.ts          # 9 structural checks
+  schemas/
+    patch.ts              # Zod schemas for parse/generate
+    analyze.ts            # Zod schemas for validate/analyze
+    template.ts           # Zod schema for create_from_template
+    rack.ts               # Zod schema for create_rack
+  templates/
+    index.ts              # Template registry + dispatcher
+    port-info.ts          # PortInfo, RackableSpec types for wiring
+    validate-params.ts    # Runtime param validation (all 10 templates)
+    synth.ts              # Oscillator -> filter -> VCA -> dac~
+    sequencer.ts          # MIDI step sequencer
+    drum-machine.ts       # 4 analog drum voices (BD/SN/HH/CP)
+    reverb-template.ts    # adc~ -> reverb -> wet/dry -> dac~
+    mixer.ts              # N-channel mixer with inlet~
+    clock.ts              # Master clock with divided outputs
+    chaos.ts              # Logistic map chaos generator
+    maths.ts              # Function generator (rise/fall envelopes)
+    turing-machine.ts     # Shift register random sequencer
+    granular.ts           # Granular synthesis sampler
+    modules/
+      types.ts            # ModuleResult, ModuleWire interfaces
+      compose.ts          # Module composition with index offsetting
+      oscillator.ts       # 4 variants: sine, saw, square, noise
+      filter.ts           # 5 variants: lowpass, highpass, bandpass, moog, korg
+      vca.ts              # VCA module (*~)
+      envelope.ts         # 3 variants: adsr, ar, decay
+      delay.ts            # 2 variants: simple, pingpong
+      reverb.ts           # 2 variants: schroeder, simple
+  wiring/
+    bus-injector.ts       # Inter-module wiring (throw~/catch~, send/receive)
+  tools/
+    parse.ts              # parse_patch tool
+    generate.ts           # generate_patch tool
+    validate.ts           # validate_patch tool
+    analyze.ts            # analyze_patch tool
+    template.ts           # create_from_template tool
+    rack.ts               # create_rack tool + combined patch builder
+  utils/
+    resolve-source.ts     # File-path vs raw-text resolver
 
-tests/
-├── parser.test.ts           # 12 tests — parsing objects, connections, subpatches
-├── serializer.test.ts       # 5 tests — round-trip fidelity, spec builder
-├── object-registry.test.ts  # 37 tests — port counts, aliases, variable objects
-├── validator.test.ts        # 20 tests — each check type + fixture validation
-├── analyze.test.ts          # 17 tests — counts, flow, DSP chains, complexity
-└── fixtures/
-    ├── hello-world.pd       # Minimal: osc~ → *~ → dac~
-    ├── midi-sequencer.pd    # 4-step sequencer with noteout
-    ├── subpatch.pd          # Nested canvas with inlet~/outlet~
-    ├── broken-connections.pd # Invalid connections for validator testing
-    ├── orphan-objects.pd    # Disconnected objects for orphan detection
-    └── complex-patch.pd     # Multi-chain audio + control + subpatch
+tests/                       # 296 tests
+  parser.test.ts             # 12 — parsing, subpatches, edge cases
+  serializer.test.ts         # 8 — round-trip, spec builder, escaping
+  object-registry.test.ts    # 37 — port counts, aliases, variable objects
+  validator.test.ts          # 20 — each check type + fixtures
+  analyze.test.ts            # 17 — counts, flow, DSP chains, complexity
+  templates/
+    compose.test.ts          # 5 — module composition, wiring
+    modules.test.ts          # 17 — all module variants
+    templates.test.ts        # 38 — complete template round-trips
+    edge-cases.test.ts       # 99 — param validation, coercion, boundaries
+  tools/
+    rack.test.ts             # 13 — rack assembly, layout, file writing
+    rack-wiring.test.ts      # 13 — wiring integration, bus injection
+  wiring/
+    bus-injector.test.ts     # 17 — connection helpers, validation
+  fixtures/
+    hello-world.pd           # Minimal: osc~ -> *~ -> dac~
+    midi-sequencer.pd        # 4-step sequencer with noteout
+    subpatch.pd              # Nested canvas with inlet~/outlet~
+    broken-connections.pd    # Invalid connections for validator
+    orphan-objects.pd        # Disconnected objects
+    complex-patch.pd         # Multi-chain audio + control + subpatch
 ```
 
 ---
@@ -267,7 +326,7 @@ tests/
 ```bash
 npm run build        # Compile with tsup (ESM + declarations)
 npm run dev          # Watch mode
-npm run test         # Run vitest (91 tests)
+npm run test         # Run vitest (296 tests)
 npm run lint         # Type-check with tsc --noEmit
 npm run inspect      # Test server with MCP Inspector
 ```
@@ -283,29 +342,19 @@ npm run inspect      # Test server with MCP Inspector
 | **Zod** | Runtime input validation |
 | **Vitest** | Test runner |
 | **tsup** | Bundler (ESM output) |
-| **Node.js `dgram`/`net`** | OSC/FUDI communication (planned, zero external deps) |
 
 ---
 
 ## Roadmap
 
 - [x] **Phase 1**: Core parser + serializer + MCP scaffold
-- [x] **Phase 2**: Patch analysis + validation (object registry, signal flow, DSP chains, complexity scoring)
-- [ ] **Phase 3**: Patch templates (synth, sequencer, delay, reverb, mixer)
-- [ ] **Phase 4**: Live control via OSC/FUDI (send messages to running Pd)
-- [ ] **Phase 5**: npm publish (`npx puredata-mcp-server`) + CI/CD
-
----
-
-## Why this project?
-
-Pure Data is a powerful visual programming language for audio, but its file format is opaque and undocumented for tooling. By building a proper parser and MCP integration, AI assistants can:
-
-1. **Lower the barrier** — Generate patches from natural language instead of manual wiring
-2. **Debug faster** — Analyze signal flow and find broken connections automatically
-3. **Bridge worlds** — Connect Pd's audio engine to AI through OSC for real-time control
-
-This fills a gap: no existing MCP server provides full `.pd` file understanding with AST-level parsing and generation.
+- [x] **Phase 2**: Patch analysis + validation (object registry, signal flow, DSP chains, complexity)
+- [x] **Phase 3**: Template engine — 10 parameterized instruments with modular topology
+- [x] **Phase 4**: `create_from_template` tool + `create_rack` (multi-module assembly)
+- [x] **Phase 5**: Inter-module wiring (throw~/catch~, send/receive, clock sync)
+- [ ] **Phase 6**: MIDI hardware integration (MicroFreak, TR-8S, K2 controller)
+- [ ] **Phase 7**: VCV Rack Prototype bridge (libpd export)
+- [ ] **Phase 8**: Live control via OSC/FUDI (send messages to running Pd)
 
 ---
 

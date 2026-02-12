@@ -128,7 +128,16 @@ function buildPatchFromSpec(spec: PatchSpec): PdPatch {
       const argStr = args.length > 0 ? " " + args.join(" ") : "";
       raw = `#X obj ${x} ${y} ${name}${argStr}`;
     } else if (type === "msg") {
-      const content = args.join(" ");
+      // Auto-escape Pd special characters in message args.
+      // AI clients may pass bare "," instead of "\," for message separators.
+      const escaped = args.map((a) => {
+        if (typeof a === "string") {
+          if (a === ",") return "\\,";
+          if (a === ";") return "\\;";
+        }
+        return a;
+      });
+      const content = escaped.join(" ");
       raw = `#X msg ${x} ${y} ${content}`;
     } else if (type === "floatatom") {
       const argStr = args.length > 0 ? " " + args.join(" ") : "";

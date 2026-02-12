@@ -81,6 +81,43 @@ describe("buildPatch", () => {
     expect(patch.root.connections.length).toBe(3);
   });
 
+  it("should auto-escape bare commas in msg args to \\,", () => {
+    const pdText = buildPatch({
+      nodes: [
+        { type: "msg", args: [0, ",", 1, 10, ",", 0.7, 100, ",", 0, 200] },
+        { name: "line~" },
+      ],
+      connections: [{ from: 0, to: 1 }],
+    });
+
+    // Bare commas should become \,
+    expect(pdText).toContain("0 \\, 1 10 \\, 0.7 100 \\, 0 200");
+    expect(pdText).not.toMatch(/\d ,/); // no bare commas
+  });
+
+  it("should preserve already-escaped \\, in msg args", () => {
+    const pdText = buildPatch({
+      nodes: [
+        { type: "msg", args: [0, "\\,", 1, 10, "\\,", 0, 200] },
+        { name: "line~" },
+      ],
+      connections: [{ from: 0, to: 1 }],
+    });
+
+    expect(pdText).toContain("0 \\, 1 10 \\, 0 200");
+  });
+
+  it("should auto-escape bare semicolons in msg args to \\;", () => {
+    const pdText = buildPatch({
+      nodes: [
+        { type: "msg", args: ["pd", "dsp", 1, ";"] },
+      ],
+      connections: [],
+    });
+
+    expect(pdText).toContain("\\;");
+  });
+
   it("should auto-layout nodes vertically", () => {
     const pdText = buildPatch({
       nodes: [

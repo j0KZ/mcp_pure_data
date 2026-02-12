@@ -30,7 +30,7 @@ export const PD_OBJECT_CATEGORIES: Record<string, string[]> = {
     "pow", "sqrt", "exp", "log", "abs",
     "min", "max", "clip",
     "sin", "cos", "tan", "atan", "atan2",
-    "wrap",
+    "wrap", "random",
   ],
   midi: [
     "notein", "noteout",
@@ -55,6 +55,7 @@ export const PD_OBJECT_CATEGORIES: Record<string, string[]> = {
     "lop~", "hip~", "bp~", "vcf~", "bob~",
     "dac~", "adc~",
     "*~", "+~", "-~", "/~",
+    "==~", "!=~", ">~", "<~", ">=~", "<=~",
     "clip~", "wrap~", "abs~", "sqrt~",
     "env~", "threshold~", "snapshot~",
     "send~", "receive~", "throw~", "catch~",
