@@ -2,10 +2,18 @@
  * Auto-mapping algorithm: assigns device controls to rack parameters.
  *
  * Strategy:
- *   1. Faders (category "amplitude") → amplitude parameters
- *   2. Pots row 1 (category "frequency") → filter parameters
- *   3. Remaining pots → remaining parameters (round-robin)
- *   4. Custom mappings override auto-assignments
+ *   1. Custom mappings applied first (override everything)
+ *   2. Absolute controls (faders/pots):
+ *      a. Faders (category "amplitude") → amplitude parameters
+ *      b. Pots row 1 (category "frequency") → filter parameters
+ *      c. Remaining absolute → remaining continuous parameters (round-robin)
+ *   3. Relative controls (encoders) → remaining continuous parameters
+ *   4. Trigger controls (buttons) → transport/toggle parameters
+ *
+ * Supports direction filtering:
+ *   - "input" (default): maps hardware→Pd controls (ctlin)
+ *   - "output": maps Pd→hardware controls (ctlout)
+ *   - Bidirectional controls match either direction.
  */
 
 import type { DeviceProfile, DeviceControl } from "../devices/types.js";
@@ -21,6 +29,18 @@ export interface MappableModule {
 /** Generate the bus name for a parameter mapping. */
 function busName(moduleId: string, paramName: string): string {
   return `${moduleId}__p__${paramName}`;
+}
+
+/**
+ * Check if a control matches a target direction.
+ * Controls without explicit direction default to "input".
+ */
+function controlMatchesDirection(
+  control: DeviceControl,
+  targetDirection: "input" | "output",
+): boolean {
+  const dir = control.direction ?? "input";
+  return dir === targetDirection || dir === "bidirectional";
 }
 
 /**
@@ -74,8 +94,30 @@ function validateCustomMappings(
   }
 }
 
+/** Helper to push a mapping result and mark control/param as used. */
+function addMapping(
+  results: ControllerMapping[],
+  usedControls: Set<string>,
+  usedParams: Set<string>,
+  control: DeviceControl,
+  moduleId: string,
+  param: ParameterDescriptor,
+): void {
+  results.push({
+    control,
+    moduleId,
+    parameter: param,
+    busName: busName(moduleId, param.name),
+  });
+  usedControls.add(control.name);
+  usedParams.add(`${moduleId}::${param.name}`);
+}
+
 /**
  * Auto-map device controls to rack parameters.
+ *
+ * @param direction - "input" for hardware→Pd (ctlin), "output" for Pd→hardware (ctlout).
+ *   Default: "input" for backwards compatibility.
  *
  * Returns mappings sorted by control order on the device.
  * Unmapped controls/parameters are silently skipped.
@@ -84,6 +126,7 @@ export function autoMap(
   modules: MappableModule[],
   device: DeviceProfile,
   customMappings?: CustomMapping[],
+  direction: "input" | "output" = "input",
 ): ControllerMapping[] {
   // Validate custom mappings first
   if (customMappings && customMappings.length > 0) {
@@ -104,27 +147,18 @@ export function autoMap(
   const usedControls = new Set<string>();
   const usedParams = new Set<string>(); // "moduleId::paramName"
 
-  // Phase 1: Apply custom mappings
+  // ── Phase 1: Apply custom mappings ──────────────────────────────────
   if (customMappings) {
     for (const cm of customMappings) {
       const control = device.controls.find((c) => c.name === cm.control)!;
       const mod = modules.find((m) => m.id === cm.module)!;
       const param = mod.parameters.find((p) => p.name === cm.parameter)!;
-      const paramKey = `${cm.module}::${cm.parameter}`;
 
-      results.push({
-        control,
-        moduleId: cm.module,
-        parameter: param,
-        busName: busName(cm.module, cm.parameter),
-      });
-      usedControls.add(cm.control);
-      usedParams.add(paramKey);
+      addMapping(results, usedControls, usedParams, control, cm.module, param);
     }
   }
 
-  // Phase 2: Auto-map remaining controls by category
-  // Sort parameters: amplitude first (for faders), then filter, then others
+  // ── Phase 2: Auto-map absolute controls by category ─────────────────
   const categoryPriority: Record<string, number> = {
     amplitude: 0,
     filter: 1,
@@ -132,68 +166,82 @@ export function autoMap(
     effect: 3,
     transport: 4,
   };
-  const remainingParams = allParams
-    .filter((p) => !usedParams.has(`${p.moduleId}::${p.param.name}`))
-    .sort((a, b) => (categoryPriority[a.param.category] ?? 9) - (categoryPriority[b.param.category] ?? 9));
 
-  // Get unused controls, maintaining device order
-  const remainingControls = device.controls.filter(
-    (c) => !usedControls.has(c.name) && c.inputType === "absolute",
+  // Get continuous params sorted by priority (for absolute + relative controls)
+  const getContinuousParams = () =>
+    allParams
+      .filter((p) => !usedParams.has(`${p.moduleId}::${p.param.name}`))
+      .filter((p) => (p.param.controlType ?? "continuous") === "continuous")
+      .sort((a, b) => (categoryPriority[a.param.category] ?? 9) - (categoryPriority[b.param.category] ?? 9));
+
+  // Get unused absolute controls that match direction
+  const absoluteControls = device.controls.filter(
+    (c) => !usedControls.has(c.name) && c.inputType === "absolute" && controlMatchesDirection(c, direction),
   );
 
-  // Group controls by category for targeted matching
-  const amplitudeControls = remainingControls.filter((c) => c.category === "amplitude");
-  const frequencyControls = remainingControls.filter((c) => c.category === "frequency");
-  const generalControls = remainingControls.filter((c) => c.category === "general");
+  // Group absolute controls by category
+  const amplitudeControls = absoluteControls.filter((c) => c.category === "amplitude");
+  const frequencyControls = absoluteControls.filter((c) => c.category === "frequency");
+  const generalAbsControls = absoluteControls.filter((c) => c.category === "general");
 
   // Match amplitude controls → amplitude params
-  const amplitudeParams = remainingParams.filter((p) => p.param.category === "amplitude");
+  const amplitudeParams = getContinuousParams().filter((p) => p.param.category === "amplitude");
   for (let i = 0; i < Math.min(amplitudeControls.length, amplitudeParams.length); i++) {
     const { moduleId, param } = amplitudeParams[i];
-    results.push({
-      control: amplitudeControls[i],
-      moduleId,
-      parameter: param,
-      busName: busName(moduleId, param.name),
-    });
-    usedControls.add(amplitudeControls[i].name);
-    usedParams.add(`${moduleId}::${param.name}`);
+    addMapping(results, usedControls, usedParams, amplitudeControls[i], moduleId, param);
   }
 
   // Match frequency controls → filter params
-  const filterParams = remainingParams.filter(
-    (p) => p.param.category === "filter" && !usedParams.has(`${p.moduleId}::${p.param.name}`),
-  );
+  const filterParams = getContinuousParams().filter((p) => p.param.category === "filter");
   for (let i = 0; i < Math.min(frequencyControls.length, filterParams.length); i++) {
     const { moduleId, param } = filterParams[i];
-    results.push({
-      control: frequencyControls[i],
-      moduleId,
-      parameter: param,
-      busName: busName(moduleId, param.name),
-    });
-    usedControls.add(frequencyControls[i].name);
-    usedParams.add(`${moduleId}::${param.name}`);
+    addMapping(results, usedControls, usedParams, frequencyControls[i], moduleId, param);
   }
 
-  // Remaining general controls → remaining params (round-robin)
-  const stillUnmapped = remainingParams.filter(
-    (p) => !usedParams.has(`${p.moduleId}::${p.param.name}`),
-  );
-  const unusedGenerals = [
+  // Remaining absolute controls → remaining continuous params (round-robin)
+  const unusedAbsolute = [
     ...amplitudeControls.filter((c) => !usedControls.has(c.name)),
     ...frequencyControls.filter((c) => !usedControls.has(c.name)),
-    ...generalControls.filter((c) => !usedControls.has(c.name)),
+    ...generalAbsControls.filter((c) => !usedControls.has(c.name)),
   ];
 
-  for (let i = 0; i < Math.min(unusedGenerals.length, stillUnmapped.length); i++) {
-    const { moduleId, param } = stillUnmapped[i];
-    results.push({
-      control: unusedGenerals[i],
-      moduleId,
-      parameter: param,
-      busName: busName(moduleId, param.name),
-    });
+  let continuousRemaining = getContinuousParams();
+  for (let i = 0; i < Math.min(unusedAbsolute.length, continuousRemaining.length); i++) {
+    const { moduleId, param } = continuousRemaining[i];
+    addMapping(results, usedControls, usedParams, unusedAbsolute[i], moduleId, param);
+  }
+
+  // ── Phase 3: Auto-map relative controls (encoders) ──────────────────
+  const relativeControls = device.controls.filter(
+    (c) => !usedControls.has(c.name) && c.inputType === "relative" && controlMatchesDirection(c, direction),
+  );
+
+  if (relativeControls.length > 0) {
+    continuousRemaining = getContinuousParams();
+    for (let i = 0; i < Math.min(relativeControls.length, continuousRemaining.length); i++) {
+      const { moduleId, param } = continuousRemaining[i];
+      addMapping(results, usedControls, usedParams, relativeControls[i], moduleId, param);
+    }
+  }
+
+  // ── Phase 4: Auto-map trigger controls (buttons) ────────────────────
+  const triggerControls = device.controls.filter(
+    (c) => !usedControls.has(c.name) && c.inputType === "trigger" && controlMatchesDirection(c, direction),
+  );
+
+  if (triggerControls.length > 0) {
+    // Buttons go to transport/toggle params first, then any remaining
+    const triggerParams = allParams
+      .filter((p) => !usedParams.has(`${p.moduleId}::${p.param.name}`))
+      .filter((p) => {
+        const ct = p.param.controlType ?? "continuous";
+        return ct === "trigger" || ct === "toggle";
+      });
+
+    for (let i = 0; i < Math.min(triggerControls.length, triggerParams.length); i++) {
+      const { moduleId, param } = triggerParams[i];
+      addMapping(results, usedControls, usedParams, triggerControls[i], moduleId, param);
+    }
   }
 
   return results;

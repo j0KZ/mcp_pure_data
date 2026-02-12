@@ -21,6 +21,7 @@ import { applyWiring, type WireSpec, type WiringModule } from "../wiring/bus-inj
 import { getDevice } from "../devices/index.js";
 import { autoMap } from "../controllers/auto-mapper.js";
 import { buildControllerPatch } from "../controllers/pd-controller.js";
+import { buildOutputControllerPatch } from "../controllers/pd-output-controller.js";
 import { injectParameterReceivers } from "../controllers/param-injector.js";
 import { generateK2DeckConfig } from "../controllers/k2-deck-config.js";
 import type { ControllerConfig, ControllerMapping, CustomMapping } from "../controllers/types.js";
@@ -250,13 +251,24 @@ export async function executeCreateRack(
 
   // Resolve controller mappings (if controller configured)
   let controllerMappings: ControllerMapping[] | undefined;
+  let outputMappings: ControllerMapping[] | undefined;
   let controllerPd: string | undefined;
+  let outputControllerPd: string | undefined;
   let k2ConfigJson: string | undefined;
   let controllerWarning = "";
+  let setupNotesText = "";
 
   if (controller) {
     const device = getDevice(controller.device);
     const midiChannel = controller.midiChannel ?? device.midiChannel;
+
+    // Include device setup notes in response
+    if (device.setupNotes && device.setupNotes.length > 0) {
+      setupNotesText =
+        `\n${device.label} setup required:\n` +
+        device.setupNotes.map((n) => `  * ${n}`).join("\n") +
+        "\n";
+    }
 
     // Collect modules with parameters
     const mappableModules = built
@@ -268,20 +280,50 @@ export async function executeCreateRack(
         "\nController: No controllable parameters found in rack modules. " +
         "Add synth, mixer, or drum-machine for controller support.\n";
     } else {
-      controllerMappings = autoMap(
-        mappableModules,
-        device,
-        controller.mappings as CustomMapping[] | undefined,
+      // Check if device has input controls (hardware → Pd)
+      const hasInputControls = device.controls.some(
+        (c) => (c.direction ?? "input") === "input" || c.direction === "bidirectional",
       );
 
-      if (controllerMappings.length > 0) {
-        // Generate controller patch
-        const controllerSpec = buildControllerPatch(controllerMappings, midiChannel);
-        controllerPd = buildPatch(controllerSpec);
+      // Check if device has output controls (Pd → hardware)
+      const hasOutputControls = device.controls.some(
+        (c) => c.direction === "output" || c.direction === "bidirectional",
+      );
 
-        // Generate K2 Deck config
-        const k2Config = generateK2DeckConfig(controllerMappings, midiChannel);
-        k2ConfigJson = JSON.stringify(k2Config, null, 2);
+      // Generate input controller (_controller.pd) for input-direction controls
+      if (hasInputControls) {
+        controllerMappings = autoMap(
+          mappableModules,
+          device,
+          controller.mappings as CustomMapping[] | undefined,
+          "input",
+        );
+
+        if (controllerMappings.length > 0) {
+          const controllerSpec = buildControllerPatch(controllerMappings, midiChannel);
+          controllerPd = buildPatch(controllerSpec);
+
+          // Generate K2 Deck config only for K2 device
+          if (device.name === "xone-k2") {
+            const k2Config = generateK2DeckConfig(controllerMappings, midiChannel);
+            k2ConfigJson = JSON.stringify(k2Config, null, 2);
+          }
+        }
+      }
+
+      // Generate output controller (_output_controller.pd) for output-direction controls
+      if (hasOutputControls) {
+        outputMappings = autoMap(
+          mappableModules,
+          device,
+          controller.mappings as CustomMapping[] | undefined,
+          "output",
+        );
+
+        if (outputMappings.length > 0) {
+          const outputSpec = buildOutputControllerPatch(outputMappings, midiChannel, device.label);
+          outputControllerPd = buildPatch(outputSpec);
+        }
       }
     }
   }
@@ -300,13 +342,20 @@ export async function executeCreateRack(
   );
 
   // Format controller mapping summary
-  let controllerInfo = controllerWarning;
+  let controllerInfo = controllerWarning + setupNotesText;
   if (controllerMappings && controllerMappings.length > 0) {
     const lines = controllerMappings.map(
       (m) => `  ${m.control.name} (CC${m.control.cc}) → ${m.moduleId}.${m.parameter.name}`,
     );
-    controllerInfo =
-      `\nController: ${controllerMappings.length} mapping(s):\n${lines.join("\n")}\n`;
+    controllerInfo +=
+      `\nInput controller: ${controllerMappings.length} mapping(s):\n${lines.join("\n")}\n`;
+  }
+  if (outputMappings && outputMappings.length > 0) {
+    const lines = outputMappings.map(
+      (m) => `  ${m.moduleId}.${m.parameter.name} → CC${m.control.cc} (${m.control.name})`,
+    );
+    controllerInfo +=
+      `\nOutput controller: ${outputMappings.length} mapping(s):\n${lines.join("\n")}\n`;
   }
 
   // Write files if outputDir provided
@@ -323,6 +372,9 @@ export async function executeCreateRack(
     if (k2ConfigJson) {
       writePromises.push(writeFile(join(dir, "_k2_config.json"), k2ConfigJson, "utf-8"));
     }
+    if (outputControllerPd) {
+      writePromises.push(writeFile(join(dir, "_output_controller.pd"), outputControllerPd, "utf-8"));
+    }
     await Promise.all(writePromises);
 
     const fileList = built.map((b) => `  - ${b.filename}`).join("\n");
@@ -331,7 +383,8 @@ export async function executeCreateRack(
       : "";
     const extraFiles = [
       "  - _rack.pd (combined)",
-      controllerPd ? "  - _controller.pd (MIDI controller)" : "",
+      controllerPd ? "  - _controller.pd (MIDI input controller)" : "",
+      outputControllerPd ? "  - _output_controller.pd (MIDI output controller)" : "",
       k2ConfigJson ? "  - _k2_config.json (K2 Deck config)" : "",
     ].filter(Boolean).join("\n");
 
@@ -358,7 +411,10 @@ export async function executeCreateRack(
 
   let controllerSection = "";
   if (controllerPd) {
-    controllerSection = `\n\n--- _controller.pd ---\n\`\`\`pd\n${controllerPd}\`\`\``;
+    controllerSection += `\n\n--- _controller.pd ---\n\`\`\`pd\n${controllerPd}\`\`\``;
+  }
+  if (outputControllerPd) {
+    controllerSection += `\n\n--- _output_controller.pd ---\n\`\`\`pd\n${outputControllerPd}\`\`\``;
   }
 
   return (

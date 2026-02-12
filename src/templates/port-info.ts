@@ -65,6 +65,8 @@ export interface ParameterDescriptor {
   inlet: number;
   /** Auto-mapping category hint */
   category: ParameterCategory;
+  /** Control behavior: continuous (default), trigger (bang on press), toggle (0/1 flip) */
+  controlType?: "continuous" | "trigger" | "toggle";
 }
 
 /**

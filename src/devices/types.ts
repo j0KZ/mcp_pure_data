@@ -17,6 +17,24 @@ export interface DeviceControl {
   range: [number, number];
   /** Auto-mapping category hint */
   category: "amplitude" | "frequency" | "general" | "transport";
+  /** Signal direction: input (hardware→Pd), output (Pd→hardware), bidirectional. Default: "input" */
+  direction?: "input" | "output" | "bidirectional";
+  /** Bipolar control with center=64 (e.g. MicroFreak CC 26 filter amount) */
+  bipolar?: boolean;
+  /** Control group for instrument-organized devices (e.g. "BD", "SD" on TR-8S) */
+  group?: string;
+}
+
+/** Note trigger for drum machines and note-based triggering. */
+export interface NoteTrigger {
+  /** Trigger name: "BD", "SD", "CH" */
+  name: string;
+  /** Primary MIDI note number */
+  note: number;
+  /** Alternate note number (e.g. GM drum map alternates) */
+  altNote?: number;
+  /** Instrument group (same as DeviceControl.group for matching) */
+  group?: string;
 }
 
 export interface DeviceProfile {
@@ -28,4 +46,8 @@ export interface DeviceProfile {
   midiChannel: number;
   /** Available controls */
   controls: DeviceControl[];
+  /** Note triggers for drum instruments */
+  noteTriggers?: NoteTrigger[];
+  /** Required setup steps the user must do on the hardware */
+  setupNotes?: string[];
 }

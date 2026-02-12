@@ -1,8 +1,9 @@
 /**
  * N-channel mixer template.
  *
- * Per channel: inlet~ → floatatom (volume 0-1) → *~ (scaling)
- * All channels summed via chained +~ → dac~
+ * Per channel: inlet~ → *~ (volume) → *~ (mute gate) → summing chain → dac~
+ * Volume: floatatom 0-1, initialized to 0.8 via loadbang.
+ * Mute: toggle 0/1, initialized to 1 (unmuted) via loadbang.
  */
 
 import type { PatchNodeSpec, PatchConnectionSpec } from "../core/serializer.js";
@@ -29,8 +30,8 @@ export function buildMixer(params: MixerParams = {}): RackableSpec {
     y: 10,
   });
 
-  // Per channel: 5 nodes (inlet~, loadbang, msg, floatatom, *~)
-  const NODES_PER_CH = 5;
+  // Per channel: 7 nodes (inlet~, loadbang, msg 0.8, floatatom, *~ volume, *~ mute, msg 1)
+  const NODES_PER_CH = 7;
   const channelStartIdx = 1;
   const inletIndices: number[] = [];
   for (let ch = 0; ch < channels; ch++) {
@@ -39,15 +40,16 @@ export function buildMixer(params: MixerParams = {}): RackableSpec {
 
     const chBase = channelStartIdx + ch * NODES_PER_CH;
 
-    // inlet~
+    // [0] inlet~
     inletIndices.push(nodes.length);
     nodes.push({ type: "obj", name: "inlet~", x, y: baseY });
 
-    // loadbang → msg 0.8 → floatatom (initialize volume)
+    // [1] loadbang → msg 0.8 → floatatom (initialize volume)
     nodes.push({ type: "obj", name: "loadbang", x: x + 60, y: baseY });
+    // [2] msg 0.8
     nodes.push({ type: "msg", args: [0.8], x: x + 60, y: baseY + 20 });
 
-    // floatatom for volume (width 5, range 0-1)
+    // [3] floatatom for volume (width 5, range 0-1)
     nodes.push({
       type: "floatatom",
       args: [5, 0, 1, 0, "-", "-", "-"],
@@ -55,17 +57,25 @@ export function buildMixer(params: MixerParams = {}): RackableSpec {
       y: baseY + 40,
     });
 
-    // *~ for volume scaling
+    // [4] *~ for volume scaling
     nodes.push({ type: "obj", name: "*~", x, y: baseY + 80 });
 
-    // loadbang → msg
+    // [5] *~ for mute gate (0 = muted, 1 = unmuted)
+    nodes.push({ type: "obj", name: "*~", x, y: baseY + 120 });
+
+    // [6] msg 1 — mute initialization (unmuted)
+    nodes.push({ type: "msg", args: [1], x: x + 60, y: baseY + 100 });
+
+    // Volume init chain: loadbang → msg 0.8 → floatatom
     connections.push({ from: chBase + 1, to: chBase + 2 });
-    // msg → floatatom
     connections.push({ from: chBase + 2, to: chBase + 3 });
-    // inlet~ → *~ inlet 0
+    // Audio chain: inlet~ → *~ volume → *~ mute
     connections.push({ from: chBase, to: chBase + 4 });
-    // floatatom → *~ inlet 1
     connections.push({ from: chBase + 3, to: chBase + 4, inlet: 1 });
+    connections.push({ from: chBase + 4, to: chBase + 5 });
+    // Mute init chain: loadbang → msg 1 → *~ mute inlet 1
+    connections.push({ from: chBase + 1, to: chBase + 6 });
+    connections.push({ from: chBase + 6, to: chBase + 5, inlet: 1 });
   }
 
   // Summing chain: chained +~ nodes
@@ -75,8 +85,8 @@ export function buildMixer(params: MixerParams = {}): RackableSpec {
   let dacIdx: number;
   let lastSumIdx: number;
 
-  // Helper: get the *~ (output) node index for a given channel
-  const chOutIdx = (ch: number) => channelStartIdx + ch * NODES_PER_CH + 4;
+  // Helper: get the *~ mute (output) node index for a given channel
+  const chOutIdx = (ch: number) => channelStartIdx + ch * NODES_PER_CH + 5;
 
   if (channels === 1) {
     // Single channel: no summing needed, go direct to dac~
@@ -160,6 +170,21 @@ export function buildMixer(params: MixerParams = {}): RackableSpec {
       nodeIndex: channelStartIdx + ch * NODES_PER_CH + 3, // floatatom
       inlet: 0,
       category: "amplitude",
+    });
+  }
+  for (let ch = 0; ch < channels; ch++) {
+    parameters.push({
+      name: `mute_ch${ch + 1}`,
+      label: `Channel ${ch + 1} Mute`,
+      min: 0,
+      max: 1,
+      default: 1, // 1 = unmuted
+      unit: "",
+      curve: "linear",
+      nodeIndex: channelStartIdx + ch * NODES_PER_CH + 5, // *~ mute gate
+      inlet: 1,
+      category: "transport",
+      controlType: "toggle",
     });
   }
 

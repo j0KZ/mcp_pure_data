@@ -32,10 +32,22 @@ const CATEGORY_LED_COLOR: Record<string, string> = {
  *   Pot row 3: CC 12→col1, CC 13→col2, CC 14→col3, CC 15→col4
  */
 function ccToColumn(cc: number): number | undefined {
-  // Faders: CC 16-19 → columns 0-3
-  if (cc >= 16 && cc <= 19) return cc - 16;
+  // Top encoders: CC 0-3 → columns 0-3
+  if (cc >= 0 && cc <= 3) return cc;
   // Pots: CC 4-15 → columns 0-3 (repeating per row)
   if (cc >= 4 && cc <= 15) return (cc - 4) % 4;
+  // Faders: CC 16-19 → columns 0-3
+  if (cc >= 16 && cc <= 19) return cc - 16;
+  // CC 20-21 (bottom encoders) — not column-aligned
+  return undefined;
+}
+
+/**
+ * Button note → column mapping.
+ * Notes 40-51 span rows C/B/A, 4 per row.
+ */
+function noteToColumn(note: number): number | undefined {
+  if (note >= 40 && note <= 51) return (note - 40) % 4;
   return undefined;
 }
 
@@ -48,24 +60,35 @@ export function generateK2DeckConfig(
   mappings: ControllerMapping[],
   midiChannel: number,
 ): Record<string, unknown> {
-  // Build cc_absolute mappings
+  // Build separate mapping sections by control type
   const ccAbsolute: Record<string, { name: string; action: string }> = {};
+  const ccRelative: Record<string, { name: string; action: string }> = {};
+  const noteOn: Record<string, { name: string; action: string }> = {};
   // Track first mapped category per column (for LED color)
   const columnCategories = new Map<number, string>();
 
   for (const mapping of mappings) {
-    const cc = mapping.control.cc;
-    if (cc === undefined) continue;
+    const label = `${mapping.moduleId}: ${mapping.parameter.label}`;
+    const entry = { name: label, action: "noop" };
 
-    ccAbsolute[String(cc)] = {
-      name: `${mapping.moduleId}: ${mapping.parameter.label}`,
-      action: "noop",
-    };
-
-    // Track column category for LED
-    const col = ccToColumn(cc);
-    if (col !== undefined && !columnCategories.has(col)) {
-      columnCategories.set(col, mapping.parameter.category);
+    if (mapping.control.inputType === "relative" && mapping.control.cc !== undefined) {
+      ccRelative[String(mapping.control.cc)] = entry;
+      const col = ccToColumn(mapping.control.cc);
+      if (col !== undefined && !columnCategories.has(col)) {
+        columnCategories.set(col, mapping.parameter.category);
+      }
+    } else if (mapping.control.inputType === "trigger" && mapping.control.note !== undefined) {
+      noteOn[String(mapping.control.note)] = entry;
+      const col = noteToColumn(mapping.control.note);
+      if (col !== undefined && !columnCategories.has(col)) {
+        columnCategories.set(col, mapping.parameter.category);
+      }
+    } else if (mapping.control.cc !== undefined) {
+      ccAbsolute[String(mapping.control.cc)] = entry;
+      const col = ccToColumn(mapping.control.cc);
+      if (col !== undefined && !columnCategories.has(col)) {
+        columnCategories.set(col, mapping.parameter.category);
+      }
     }
   }
 
@@ -80,15 +103,23 @@ export function generateK2DeckConfig(
     }
   }
 
+  const mappingSections: Record<string, unknown> = {
+    cc_absolute: ccAbsolute,
+  };
+  if (Object.keys(ccRelative).length > 0) {
+    mappingSections.cc_relative = ccRelative;
+  }
+  if (Object.keys(noteOn).length > 0) {
+    mappingSections.note_on = noteOn;
+  }
+
   return {
     profile_name: "pd_rack",
     midi_channel: midiChannel,
     midi_device: "XONE:K2",
     led_color_offsets: { red: 0, amber: 36, green: 72 },
     throttle: { cc_max_hz: 30, cc_volume_max_hz: 20 },
-    mappings: {
-      cc_absolute: ccAbsolute,
-    },
+    mappings: mappingSections,
     led_defaults: {
       on_start: onStart,
       on_connect: "all_off",

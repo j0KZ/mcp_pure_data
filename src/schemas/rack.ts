@@ -48,7 +48,7 @@ export const createRackSchema = {
     .object({
       device: z
         .string()
-        .describe('Controller device name (currently: "k2").'),
+        .describe('Controller device name: "k2" (Xone:K2 input), "microfreak"/"mf" (MicroFreak output), "tr-8s"/"tr8s" (TR-8S bidirectional).'),
       midiChannel: z
         .number()
         .int()
@@ -77,7 +77,7 @@ export const createRackSchema = {
     })
     .optional()
     .describe(
-      "MIDI controller configuration. Generates _controller.pd for hardware control of rack parameters.",
+      "MIDI controller configuration. Generates _controller.pd (input) and/or _output_controller.pd (output) for hardware control of rack parameters.",
     ),
   outputDir: z
     .string()

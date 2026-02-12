@@ -4,10 +4,16 @@
 
 import type { DeviceProfile } from "./types.js";
 import { k2Profile } from "./k2.js";
+import { microfreakProfile } from "./microfreak.js";
+import { tr8sProfile } from "./tr8s.js";
 
 const devices = new Map<string, DeviceProfile>([
   [k2Profile.name, k2Profile],
   ["k2", k2Profile], // alias
+  [microfreakProfile.name, microfreakProfile],
+  ["mf", microfreakProfile], // alias
+  [tr8sProfile.name, tr8sProfile],
+  ["tr8s", tr8sProfile], // alias
 ]);
 
 /**

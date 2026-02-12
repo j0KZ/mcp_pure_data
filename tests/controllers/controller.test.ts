@@ -15,6 +15,8 @@ import { parsePatch } from "../../src/core/parser.js";
 import { buildTemplateWithPorts } from "../../src/templates/index.js";
 import { executeCreateRack } from "../../src/tools/rack.js";
 import type { ControllerMapping } from "../../src/controllers/types.js";
+import { buildOutputControllerPatch } from "../../src/controllers/pd-output-controller.js";
+import { oscTypeValues } from "../../src/devices/microfreak.js";
 import type { ParameterDescriptor } from "../../src/templates/port-info.js";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
@@ -131,8 +133,9 @@ describe("auto-mapper", () => {
 
     const mappings = autoMap(modules, k2);
 
-    // K2 has 16 absolute controls — can't map more than 16
-    expect(mappings.length).toBeLessThanOrEqual(16);
+    // K2 has 16 absolute + 6 relative = 22 continuous-capable controls
+    // All 20 params should be mapped (20 < 22)
+    expect(mappings.length).toBe(20);
   });
 
   // 5. Empty parameters list → empty mappings
@@ -510,6 +513,107 @@ describe("K2 Deck config generator", () => {
     expect(Object.keys(abs)).toEqual(["16"]);
     expect(abs["17"]).toBeUndefined();
   });
+
+  // 18. Includes cc_relative section for encoder mappings
+  it("includes cc_relative section for encoder mappings", () => {
+    const mappings: ControllerMapping[] = [
+      makeFaderMapping(16, "Volume", "amplitude"),
+      {
+        control: { name: "encoder1", type: "encoder", cc: 0, inputType: "relative", range: [0, 127], category: "general" },
+        moduleId: "synth",
+        parameter: param("cutoff", "filter"),
+        busName: "synth__p__cutoff",
+      },
+    ];
+
+    const config = generateK2DeckConfig(mappings, 16) as Record<string, unknown>;
+    const m = config.mappings as Record<string, unknown>;
+
+    // cc_absolute should have the fader
+    expect(m.cc_absolute).toBeDefined();
+    expect((m.cc_absolute as Record<string, unknown>)["16"]).toBeDefined();
+
+    // cc_relative should have the encoder
+    expect(m.cc_relative).toBeDefined();
+    const rel = m.cc_relative as Record<string, { name: string; action: string }>;
+    expect(rel["0"]).toBeDefined();
+    expect(rel["0"].name).toContain("cutoff");
+    expect(rel["0"].action).toBe("noop");
+  });
+
+  // 19. Includes note_on section for button mappings
+  it("includes note_on section for button mappings", () => {
+    const mappings: ControllerMapping[] = [
+      {
+        control: { name: "buttonC1", type: "button", note: 40, inputType: "trigger", range: [0, 1], category: "transport" },
+        moduleId: "mixer",
+        parameter: { ...param("mute", "transport"), controlType: "toggle" as const },
+        busName: "mixer__p__mute",
+      },
+    ];
+
+    const config = generateK2DeckConfig(mappings, 16) as Record<string, unknown>;
+    const m = config.mappings as Record<string, unknown>;
+
+    expect(m.note_on).toBeDefined();
+    const noteSection = m.note_on as Record<string, { name: string; action: string }>;
+    expect(noteSection["40"]).toBeDefined();
+    expect(noteSection["40"].name).toContain("mute");
+    expect(noteSection["40"].action).toBe("noop");
+  });
+
+  // 20. Encoder CC 0-3 maps to columns 0-3 for LED feedback
+  it("encoder CC 0-3 triggers LED feedback on correct column", () => {
+    const mappings: ControllerMapping[] = [
+      {
+        control: { name: "encoder3", type: "encoder", cc: 2, inputType: "relative", range: [0, 127], category: "general" },
+        moduleId: "synth",
+        parameter: param("detune", "oscillator"),
+        busName: "synth__p__detune",
+      },
+    ];
+
+    const config = generateK2DeckConfig(mappings, 16) as Record<string, unknown>;
+    const ledDefaults = config.led_defaults as Record<string, unknown>;
+    const onStart = ledDefaults.on_start as { note: number; color: string }[];
+
+    // CC 2 → column 2 → note 38
+    const col2 = onStart.find((l) => l.note === 38);
+    expect(col2).toBeDefined();
+    expect(col2!.color).toBe("red"); // oscillator → red
+  });
+
+  // 21. Button notes map to correct columns for LED feedback
+  it("button notes map to columns for LED feedback", () => {
+    const mappings: ControllerMapping[] = [
+      {
+        control: { name: "buttonB2", type: "button", note: 45, inputType: "trigger", range: [0, 1], category: "transport" },
+        moduleId: "mixer",
+        parameter: { ...param("mute_ch2", "transport"), controlType: "toggle" as const },
+        busName: "mixer__p__mute_ch2",
+      },
+    ];
+
+    const config = generateK2DeckConfig(mappings, 16) as Record<string, unknown>;
+    const ledDefaults = config.led_defaults as Record<string, unknown>;
+    const onStart = ledDefaults.on_start as { note: number; color: string }[];
+
+    // Note 45 → (45-40) % 4 = column 1 → note 37
+    const col1 = onStart.find((l) => l.note === 37);
+    expect(col1).toBeDefined();
+    expect(col1!.color).toBe("amber"); // transport → amber
+  });
+
+  // 22. Omits cc_relative/note_on sections when no encoders/buttons mapped
+  it("omits cc_relative and note_on when no encoders or buttons mapped", () => {
+    const mappings = [makeFaderMapping(16, "Volume", "amplitude")];
+    const config = generateK2DeckConfig(mappings, 16) as Record<string, unknown>;
+    const m = config.mappings as Record<string, unknown>;
+
+    expect(m.cc_absolute).toBeDefined();
+    expect(m.cc_relative).toBeUndefined();
+    expect(m.note_on).toBeUndefined();
+  });
 });
 
 // ═════════════════════════════════════════════════════════════════════════
@@ -521,7 +625,7 @@ describe("device registry", () => {
     const device = getDevice("k2");
     expect(device.name).toBe("xone-k2");
     expect(device.midiChannel).toBe(16);
-    expect(device.controls.length).toBe(16);
+    expect(device.controls.length).toBe(34); // 4 faders + 12 pots + 6 encoders + 12 buttons
   });
 
   it("throws on unknown device", () => {
@@ -558,17 +662,57 @@ describe("template parameters", () => {
     expect(res!.category).toBe("filter");
   });
 
-  it("mixer exposes volume_ch{N} parameters", () => {
+  it("mixer exposes volume_ch{N} and mute_ch{N} parameters", () => {
     const r = buildTemplateWithPorts("mixer", { channels: 3 });
     expect(r.parameters).toBeDefined();
-    expect(r.parameters!.length).toBe(3);
+    expect(r.parameters!.length).toBe(6); // 3 volume + 3 mute
+    // Volume params first
     expect(r.parameters![0].name).toBe("volume_ch1");
     expect(r.parameters![1].name).toBe("volume_ch2");
     expect(r.parameters![2].name).toBe("volume_ch3");
-    for (const p of r.parameters!) {
+    for (const p of r.parameters!.slice(0, 3)) {
       expect(p.category).toBe("amplitude");
       expect(p.curve).toBe("linear");
     }
+    // Mute params second
+    expect(r.parameters![3].name).toBe("mute_ch1");
+    expect(r.parameters![4].name).toBe("mute_ch2");
+    expect(r.parameters![5].name).toBe("mute_ch3");
+    for (const p of r.parameters!.slice(3)) {
+      expect(p.category).toBe("transport");
+      expect(p.controlType).toBe("toggle");
+    }
+  });
+
+  it("mixer mute defaults to 1 (unmuted)", () => {
+    const r = buildTemplateWithPorts("mixer", { channels: 2 });
+    const mutes = r.parameters!.filter((p) => p.name.startsWith("mute_"));
+    expect(mutes).toHaveLength(2);
+    for (const m of mutes) {
+      expect(m.default).toBe(1);
+      expect(m.min).toBe(0);
+      expect(m.max).toBe(1);
+    }
+  });
+
+  it("mixer mute gate is in audio chain (contains two *~ per channel)", () => {
+    const r = buildTemplateWithPorts("mixer", { channels: 1 });
+    // Single channel should have: volume *~ and mute *~
+    const starNodes = r.spec.nodes.filter(
+      (n) => n.name === "*~",
+    );
+    expect(starNodes.length).toBe(2); // volume + mute
+  });
+
+  it("mixer with mute produces valid Pd (round-trip)", () => {
+    const r = buildTemplateWithPorts("mixer", { channels: 2 });
+    const pd = buildPatch(r.spec);
+    expect(pd).toContain("#N canvas");
+    expect(pd).toContain("#X obj");
+    expect(pd).toContain("#X connect");
+    // Msg nodes: "#X msg <x> <y> <value>;" — check value at end of line
+    expect(pd).toMatch(/msg \d+ \d+ 0\.8/);  // volume init
+    expect(pd).toMatch(/msg \d+ \d+ 1;/);     // mute init
   });
 
   it("drum-machine exposes volume parameter", () => {
@@ -613,7 +757,7 @@ describe("controller integration", () => {
     });
 
     // Should mention controller mappings
-    expect(result).toContain("Controller:");
+    expect(result).toContain("Input controller:");
     expect(result).toContain("mapping(s)");
 
     // Check files exist
@@ -726,5 +870,678 @@ describe("controller integration", () => {
 
     // Should NOT create controller files
     await expect(stat(join(tmpDir, "_controller.pd"))).rejects.toThrow();
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// DEVICE PROFILES
+// ═════════════════════════════════════════════════════════════════════════
+
+describe("device profiles", () => {
+  it("resolves MicroFreak by name and alias", () => {
+    const byName = getDevice("microfreak");
+    expect(byName.name).toBe("microfreak");
+    expect(byName.label).toBe("Arturia MicroFreak");
+
+    const byAlias = getDevice("mf");
+    expect(byAlias.name).toBe("microfreak");
+  });
+
+  it("resolves TR-8S by name and aliases", () => {
+    const byName = getDevice("tr-8s");
+    expect(byName.name).toBe("tr-8s");
+    expect(byName.label).toBe("Roland TR-8S");
+
+    const byAlias = getDevice("tr8s");
+    expect(byAlias.name).toBe("tr-8s");
+  });
+
+  it("MicroFreak has 21 output controls on channel 1", () => {
+    const mf = getDevice("microfreak");
+    expect(mf.midiChannel).toBe(1);
+    expect(mf.controls.length).toBe(21);
+    // All controls should be output direction
+    for (const c of mf.controls) {
+      expect(c.direction).toBe("output");
+    }
+  });
+
+  it("MicroFreak CC 26 is marked bipolar", () => {
+    const mf = getDevice("microfreak");
+    const cc26 = mf.controls.find((c) => c.cc === 26);
+    expect(cc26).toBeDefined();
+    expect(cc26!.bipolar).toBe(true);
+    expect(cc26!.name).toBe("env_filter_amount");
+  });
+
+  it("MicroFreak has setup notes", () => {
+    const mf = getDevice("microfreak");
+    expect(mf.setupNotes).toBeDefined();
+    expect(mf.setupNotes!.length).toBeGreaterThan(0);
+    expect(mf.setupNotes!.some((n) => n.includes("channel 1"))).toBe(true);
+  });
+
+  it("TR-8S has 51 controls (44 per-instrument + 7 global) on channel 10", () => {
+    const tr = getDevice("tr-8s");
+    expect(tr.midiChannel).toBe(10);
+    expect(tr.controls.length).toBe(51);
+  });
+
+  it("TR-8S has 11 note triggers with groups", () => {
+    const tr = getDevice("tr-8s");
+    expect(tr.noteTriggers).toBeDefined();
+    expect(tr.noteTriggers!.length).toBe(11);
+    // BD should be note 36 with alt 35
+    const bd = tr.noteTriggers!.find((t) => t.name === "BD");
+    expect(bd).toBeDefined();
+    expect(bd!.note).toBe(36);
+    expect(bd!.altNote).toBe(35);
+    expect(bd!.group).toBe("BD");
+  });
+
+  it("TR-8S controls have instrument groups", () => {
+    const tr = getDevice("tr-8s");
+    const bdControls = tr.controls.filter((c) => c.group === "BD");
+    expect(bdControls.length).toBe(4); // tune, decay, level, ctrl
+    expect(bdControls.map((c) => c.name).sort()).toEqual(
+      ["bd_ctrl", "bd_decay", "bd_level", "bd_tune"],
+    );
+  });
+
+  it("TR-8S excludes broken CC#70 and CC#14", () => {
+    const tr = getDevice("tr-8s");
+    expect(tr.controls.find((c) => c.cc === 70)).toBeUndefined();
+    expect(tr.controls.find((c) => c.cc === 14)).toBeUndefined();
+  });
+
+  it("TR-8S has critical RxEditData setup note", () => {
+    const tr = getDevice("tr-8s");
+    expect(tr.setupNotes).toBeDefined();
+    expect(tr.setupNotes!.some((n) => n.includes("RxEditData"))).toBe(true);
+  });
+
+  it("TR-8S controls are bidirectional", () => {
+    const tr = getDevice("tr-8s");
+    for (const c of tr.controls) {
+      expect(c.direction).toBe("bidirectional");
+    }
+  });
+
+  it("throws on unknown device", () => {
+    expect(() => getDevice("unknown-device")).toThrow("Unknown device");
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// OUTPUT CONTROLLER
+// ═════════════════════════════════════════════════════════════════════════
+
+describe("output controller", () => {
+  it("generates ctlout chains for MicroFreak output controls", () => {
+    const mf = getDevice("microfreak");
+
+    const mappings: ControllerMapping[] = [
+      {
+        control: mf.controls.find((c) => c.name === "filter_cutoff")!,
+        moduleId: "synth",
+        parameter: param("cutoff", "filter", { min: 200, max: 12000 }),
+        busName: "synth__p__cutoff",
+      },
+    ];
+
+    const spec = buildOutputControllerPatch(mappings, 1, "Arturia MicroFreak");
+    const pd = buildPatch(spec);
+
+    // Should contain ctlout (not ctlin)
+    expect(pd).toContain("ctlout");
+    expect(pd).not.toContain("ctlin");
+    // Should have throttle
+    expect(pd).toContain("pipe 33");
+    // Should have change for redundancy suppression
+    expect(pd).toContain("change");
+    // Should have receive bus
+    expect(pd).toContain("receive synth__p__cutoff");
+    // Should reference correct CC
+    expect(pd).toContain("ctlout 23 1");
+    // Should have title
+    expect(pd).toContain("ARTURIA MICROFREAK OUTPUT CONTROLLER");
+  });
+
+  it("generates panic section with All Notes Off and All Sound Off", () => {
+    const mf = getDevice("microfreak");
+
+    const mappings: ControllerMapping[] = [
+      {
+        control: mf.controls[0],
+        moduleId: "synth",
+        parameter: param("osc", "oscillator"),
+        busName: "synth__p__osc",
+      },
+    ];
+
+    const spec = buildOutputControllerPatch(mappings, 1, "MicroFreak");
+    const pd = buildPatch(spec);
+
+    expect(pd).toContain("__panic");
+    expect(pd).toContain("ctlout 123 1"); // All Notes Off
+    expect(pd).toContain("ctlout 120 1"); // All Sound Off
+  });
+
+  it("auto-mapper returns no input mappings for MicroFreak (all output)", () => {
+    const mf = getDevice("microfreak");
+    const modules: MappableModule[] = [
+      { id: "synth", parameters: [param("cutoff", "filter")] },
+    ];
+
+    // Input direction should yield 0 mappings (MicroFreak has no input controls)
+    const inputMappings = autoMap(modules, mf, undefined, "input");
+    expect(inputMappings.length).toBe(0);
+
+    // Output direction should yield mappings
+    const outputMappings = autoMap(modules, mf, undefined, "output");
+    expect(outputMappings.length).toBeGreaterThan(0);
+  });
+
+  it("auto-mapper returns both input and output for TR-8S (bidirectional)", () => {
+    const tr = getDevice("tr-8s");
+    const modules: MappableModule[] = [
+      {
+        id: "drums",
+        parameters: [
+          param("amplitude", "amplitude"),
+          param("cutoff", "filter"),
+        ],
+      },
+    ];
+
+    // Both directions should return mappings for bidirectional controls
+    const inputMappings = autoMap(modules, tr, undefined, "input");
+    expect(inputMappings.length).toBeGreaterThan(0);
+
+    const outputMappings = autoMap(modules, tr, undefined, "output");
+    expect(outputMappings.length).toBeGreaterThan(0);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// MICROFREAK OSCILLATOR TYPE LOOKUP
+// ═════════════════════════════════════════════════════════════════════════
+
+describe("MicroFreak oscType values", () => {
+  it("has reception-range midpoints for all 21 oscillator types", () => {
+    // oscTypeValues imported at top level
+    expect(Object.keys(oscTypeValues).length).toBe(21);
+    // All values should be 0-127
+    for (const [name, value] of Object.entries(oscTypeValues)) {
+      expect(value).toBeGreaterThanOrEqual(0);
+      expect(value).toBeLessThanOrEqual(127);
+    }
+  });
+
+  it("BasicWaves is at the low end, Vocoder at the high end", () => {
+    // oscTypeValues imported at top level
+    expect(oscTypeValues.BasicWaves).toBeLessThan(10);
+    expect(oscTypeValues.Vocoder).toBeGreaterThan(120);
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// RACK WITH OUTPUT CONTROLLER (MicroFreak integration)
+// ═════════════════════════════════════════════════════════════════════════
+
+describe("rack with output controller", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "pd-output-ctrl-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("generates _output_controller.pd for MicroFreak", async () => {
+    const result = await executeCreateRack({
+      modules: [
+        { template: "synth", id: "synth" },
+      ],
+      controller: { device: "microfreak" },
+      outputDir: tmpDir,
+    });
+
+    // Should have output controller info
+    expect(result).toContain("Output controller:");
+    expect(result).toContain("mapping(s)");
+
+    // Should NOT have input controller (MicroFreak is output-only)
+    expect(result).not.toContain("Input controller:");
+
+    // _output_controller.pd should exist
+    const outputCtrlStat = await stat(join(tmpDir, "_output_controller.pd"));
+    expect(outputCtrlStat.isFile()).toBe(true);
+
+    // _controller.pd should NOT exist (no input controls)
+    await expect(stat(join(tmpDir, "_controller.pd"))).rejects.toThrow();
+
+    // Should include setup notes
+    expect(result).toContain("Arturia MicroFreak setup required:");
+    expect(result).toContain("channel 1");
+  });
+
+  it("generates both controllers for TR-8S (bidirectional)", async () => {
+    const result = await executeCreateRack({
+      modules: [
+        { template: "synth", id: "synth" },
+      ],
+      controller: { device: "tr-8s" },
+      outputDir: tmpDir,
+    });
+
+    // Should have both controller types
+    expect(result).toContain("Input controller:");
+    expect(result).toContain("Output controller:");
+
+    // Both files should exist
+    const inputCtrl = await stat(join(tmpDir, "_controller.pd"));
+    expect(inputCtrl.isFile()).toBe(true);
+
+    const outputCtrl = await stat(join(tmpDir, "_output_controller.pd"));
+    expect(outputCtrl.isFile()).toBe(true);
+
+    // Should include TR-8S setup notes
+    expect(result).toContain("Roland TR-8S setup required:");
+    expect(result).toContain("RxEditData");
+  });
+
+  it("output controller contains ctlout with correct CC and channel", async () => {
+    const result = await executeCreateRack({
+      modules: [
+        { template: "synth", id: "synth" },
+      ],
+      controller: { device: "microfreak", midiChannel: 1 },
+      outputDir: tmpDir,
+    });
+
+    const outputPd = await readFile(join(tmpDir, "_output_controller.pd"), "utf-8");
+    expect(outputPd).toContain("ctlout");
+    expect(outputPd).toContain("pipe 33");
+    expect(outputPd).toContain("change");
+  });
+});
+
+// ═════════════════════════════════════════════════════════════════════════
+// K2 FULL PROFILE (absolute + relative + trigger)
+// ═════════════════════════════════════════════════════════════════════════
+
+describe("K2 full profile", () => {
+  const k2 = getDevice("k2");
+
+  it("has 6 encoders with relative inputType", () => {
+    const encoders = k2.controls.filter((c) => c.type === "encoder");
+    expect(encoders).toHaveLength(6);
+    for (const enc of encoders) {
+      expect(enc.inputType).toBe("relative");
+      expect(enc.cc).toBeDefined();
+    }
+  });
+
+  it("has 12 buttons with trigger inputType and note numbers", () => {
+    const buttons = k2.controls.filter((c) => c.type === "button");
+    expect(buttons).toHaveLength(12);
+    for (const btn of buttons) {
+      expect(btn.inputType).toBe("trigger");
+      expect(btn.note).toBeDefined();
+      expect(btn.note!).toBeGreaterThanOrEqual(40);
+      expect(btn.note!).toBeLessThanOrEqual(51);
+    }
+  });
+
+  it("has setupNotes", () => {
+    expect(k2.setupNotes).toBeDefined();
+    expect(k2.setupNotes!.length).toBeGreaterThanOrEqual(3);
+    // Should mention MIDI channel, layers, and encoders
+    const all = k2.setupNotes!.join(" ");
+    expect(all).toContain("channel");
+    expect(all).toContain("Latching layers");
+    expect(all).toContain("relative");
+  });
+
+  it("encoder CCs are 0-3 and 20-21", () => {
+    const encoders = k2.controls.filter((c) => c.type === "encoder");
+    const ccs = encoders.map((e) => e.cc).sort((a, b) => a! - b!);
+    expect(ccs).toEqual([0, 1, 2, 3, 20, 21]);
+  });
+
+  it("button notes span rows C, B, A (40-51)", () => {
+    const buttons = k2.controls.filter((c) => c.type === "button");
+    const notes = buttons.map((b) => b.note).sort((a, b) => a! - b!);
+    expect(notes).toEqual([40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51]);
+  });
+});
+
+describe("auto-mapper with K2 encoders and buttons", () => {
+  const k2 = getDevice("k2");
+
+  it("maps encoders to continuous params after absolute controls", () => {
+    // 18 amplitude params: 16 get absolute controls, 2 should get encoders
+    const modules: MappableModule[] = [
+      {
+        id: "mod",
+        parameters: Array.from({ length: 18 }, (_, i) =>
+          param(`param${i}`, "amplitude"),
+        ),
+      },
+    ];
+
+    const mappings = autoMap(modules, k2);
+    expect(mappings.length).toBe(18);
+
+    // First 16 should be absolute (faders + pots)
+    const absoluteMappings = mappings.filter((m) => m.control.inputType === "absolute");
+    expect(absoluteMappings.length).toBe(16);
+
+    // Remaining 2 should be relative (encoders)
+    const relativeMappings = mappings.filter((m) => m.control.inputType === "relative");
+    expect(relativeMappings.length).toBe(2);
+  });
+
+  it("maps buttons to toggle params", () => {
+    const modules: MappableModule[] = [
+      {
+        id: "mod",
+        parameters: [
+          param("volume", "amplitude"),
+          { ...param("mute", "transport"), controlType: "toggle" as const },
+          { ...param("solo", "transport"), controlType: "toggle" as const },
+        ],
+      },
+    ];
+
+    const mappings = autoMap(modules, k2);
+
+    // volume → absolute control (fader)
+    const volumeMapping = mappings.find((m) => m.parameter.name === "volume");
+    expect(volumeMapping).toBeDefined();
+    expect(volumeMapping!.control.inputType).toBe("absolute");
+
+    // mute and solo → trigger controls (buttons)
+    const muteMapping = mappings.find((m) => m.parameter.name === "mute");
+    expect(muteMapping).toBeDefined();
+    expect(muteMapping!.control.inputType).toBe("trigger");
+
+    const soloMapping = mappings.find((m) => m.parameter.name === "solo");
+    expect(soloMapping).toBeDefined();
+    expect(soloMapping!.control.inputType).toBe("trigger");
+  });
+
+  it("does not map buttons to continuous params", () => {
+    // Only continuous params — buttons should NOT be assigned
+    const modules: MappableModule[] = [
+      {
+        id: "mod",
+        parameters: [
+          param("cutoff", "filter"),
+          param("volume", "amplitude"),
+        ],
+      },
+    ];
+
+    const mappings = autoMap(modules, k2);
+    // All mappings should be absolute or relative — no buttons
+    for (const m of mappings) {
+      expect(m.control.inputType).not.toBe("trigger");
+    }
+  });
+
+  it("maps K2 buttons to mixer mute_ch params (Phase 4 integration)", () => {
+    // Use real mixer template parameters
+    const mixer = buildTemplateWithPorts("mixer", { channels: 3 });
+    const modules: MappableModule[] = [
+      { id: "mixer", parameters: mixer.parameters! },
+    ];
+
+    const mappings = autoMap(modules, k2);
+
+    // Volume params → absolute controls (faders)
+    const volumeMappings = mappings.filter((m) => m.parameter.name.startsWith("volume_"));
+    expect(volumeMappings.length).toBe(3);
+    for (const m of volumeMappings) {
+      expect(m.control.inputType).toBe("absolute");
+    }
+
+    // Mute params → trigger controls (buttons)
+    const muteMappings = mappings.filter((m) => m.parameter.name.startsWith("mute_"));
+    expect(muteMappings.length).toBe(3);
+    for (const m of muteMappings) {
+      expect(m.control.inputType).toBe("trigger");
+      expect(m.control.note).toBeDefined();
+    }
+  });
+});
+
+describe("controller patch with relative and trigger chains", () => {
+  const k2 = getDevice("k2");
+
+  it("generates accumulator chain for relative encoder mapping", () => {
+    const encoder = k2.controls.find((c) => c.name === "encoder1")!;
+    const mappings: ControllerMapping[] = [
+      {
+        control: encoder,
+        moduleId: "synth",
+        parameter: param("cutoff", "filter", { min: 200, max: 12000 }),
+        busName: "synth__p__cutoff",
+      },
+    ];
+
+    const spec = buildControllerPatch(mappings, 16);
+    const pd = buildPatch(spec);
+
+    // Should have ctlin (not notein)
+    expect(pd).toContain("ctlin");
+    // Should have expr for two's complement decoding
+    expect(pd).toContain("expr");
+    expect(pd).toContain("128");
+    // Should have clip for range clamping
+    expect(pd).toContain("clip 200 12000");
+    // Should have loadbang for initialization
+    expect(pd).toContain("loadbang");
+    // Should send to bus
+    expect(pd).toContain("send synth__p__cutoff");
+  });
+
+  it("generates notein/select chain for trigger button mapping", () => {
+    const button = k2.controls.find((c) => c.name === "buttonA1")!;
+    const mappings: ControllerMapping[] = [
+      {
+        control: button,
+        moduleId: "clock",
+        parameter: { ...param("start", "transport"), controlType: "trigger" },
+        busName: "clock__p__start",
+      },
+    ];
+
+    const spec = buildControllerPatch(mappings, 16);
+    const pd = buildPatch(spec);
+
+    // Should have notein (not ctlin)
+    expect(pd).toContain("notein");
+    // Should have stripnote to filter Note Off
+    expect(pd).toContain("stripnote");
+    // Should have select with the button's note number
+    expect(pd).toContain("select 48");
+    // Should send bang
+    expect(pd).toContain("bang");
+    // Should send to bus
+    expect(pd).toContain("send clock__p__start");
+    // Should NOT have toggle
+    expect(pd).not.toContain("toggle");
+  });
+
+  it("generates toggle chain for toggle button mapping", () => {
+    const button = k2.controls.find((c) => c.name === "buttonC1")!;
+    const mappings: ControllerMapping[] = [
+      {
+        control: button,
+        moduleId: "synth",
+        parameter: { ...param("mute", "transport"), controlType: "toggle" },
+        busName: "synth__p__mute",
+      },
+    ];
+
+    const spec = buildControllerPatch(mappings, 16);
+    const pd = buildPatch(spec);
+
+    // Should have notein
+    expect(pd).toContain("notein");
+    // Should have select with the button's note number (40)
+    expect(pd).toContain("select 40");
+    // Should have toggle for latching behavior
+    expect(pd).toContain("toggle");
+    // Should send to bus
+    expect(pd).toContain("send synth__p__mute");
+  });
+
+  it("generates mixed chains for absolute + relative + trigger in one patch", () => {
+    const fader = k2.controls.find((c) => c.name === "fader1")!;
+    const encoder = k2.controls.find((c) => c.name === "encoder1")!;
+    const button = k2.controls.find((c) => c.name === "buttonA1")!;
+
+    const mappings: ControllerMapping[] = [
+      {
+        control: fader,
+        moduleId: "synth",
+        parameter: param("volume", "amplitude"),
+        busName: "synth__p__volume",
+      },
+      {
+        control: encoder,
+        moduleId: "synth",
+        parameter: param("cutoff", "filter", { min: 200, max: 12000 }),
+        busName: "synth__p__cutoff",
+      },
+      {
+        control: button,
+        moduleId: "synth",
+        parameter: { ...param("mute", "transport"), controlType: "toggle" },
+        busName: "synth__p__mute",
+      },
+    ];
+
+    const spec = buildControllerPatch(mappings, 16);
+    const pd = buildPatch(spec);
+
+    // Should have all three MIDI input types
+    expect(pd).toContain("ctlin"); // fader + encoder both use ctlin
+    expect(pd).toContain("notein"); // button
+    // Should have accumulator for encoder
+    expect(pd).toContain("expr");
+    expect(pd).toContain("loadbang");
+    // Should have toggle for button
+    expect(pd).toContain("toggle");
+    // All three buses should be present
+    expect(pd).toContain("send synth__p__volume");
+    expect(pd).toContain("send synth__p__cutoff");
+    expect(pd).toContain("send synth__p__mute");
+  });
+
+  it("produces valid Pd patch with relative chain (round-trip)", () => {
+    const encoder = k2.controls.find((c) => c.name === "encoder1")!;
+    const mappings: ControllerMapping[] = [
+      {
+        control: encoder,
+        moduleId: "synth",
+        parameter: param("cutoff", "filter", { min: 200, max: 12000 }),
+        busName: "synth__p__cutoff",
+      },
+    ];
+
+    const spec = buildControllerPatch(mappings, 16);
+    const pd = buildPatch(spec);
+
+    // Should be valid Pd format (starts with canvas, contains objects)
+    expect(pd).toContain("#N canvas");
+    expect(pd).toContain("#X obj");
+    expect(pd).toContain("#X connect");
+  });
+
+  it("skips malformed trigger control with no note (guard clause)", () => {
+    // Simulate a malformed control: trigger type but no note number
+    const malformed = {
+      name: "bad_trigger",
+      type: "button" as const,
+      cc: undefined,
+      note: undefined,
+      inputType: "trigger" as const,
+      range: [0, 127] as [number, number],
+      category: "general" as const,
+      direction: "input" as const,
+    };
+
+    const mappings: ControllerMapping[] = [
+      {
+        control: malformed,
+        moduleId: "synth",
+        parameter: param("mute", "transport", { controlType: "toggle" }),
+        busName: "synth__p__mute",
+      },
+    ];
+
+    const spec = buildControllerPatch(mappings, 16);
+    const pd = buildPatch(spec);
+
+    // Should have the label text but no MIDI chain
+    expect(pd).toContain("bad_trigger");
+    expect(pd).not.toContain("notein");
+    expect(pd).not.toContain("ctlin");
+  });
+});
+
+describe("K2 rack integration with all control types", () => {
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    tmpDir = await mkdtemp(join(tmpdir(), "pd-k2-full-test-"));
+  });
+
+  afterEach(async () => {
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  it("generates _controller.pd with K2 and includes setup notes", async () => {
+    const result = await executeCreateRack({
+      modules: [
+        { template: "synth", id: "synth" },
+      ],
+      controller: { device: "k2" },
+      outputDir: tmpDir,
+    });
+
+    // Should have input controller
+    expect(result).toContain("Input controller:");
+    // Should have K2 deck config in file list
+    expect(result).toContain("K2 Deck config");
+    // Should include setup notes
+    expect(result).toContain("Allen & Heath Xone:K2 setup required:");
+    expect(result).toContain("Latching layers");
+
+    // _controller.pd should exist
+    const ctrlStat = await stat(join(tmpDir, "_controller.pd"));
+    expect(ctrlStat.isFile()).toBe(true);
+  });
+
+  it("controller patch contains ctlin for absolute controls", async () => {
+    await executeCreateRack({
+      modules: [
+        { template: "synth", id: "synth" },
+      ],
+      controller: { device: "k2" },
+      outputDir: tmpDir,
+    });
+
+    const pd = await readFile(join(tmpDir, "_controller.pd"), "utf-8");
+    // Should have ctlin for absolute CC controls
+    expect(pd).toContain("ctlin");
+    // Should have send nodes
+    expect(pd).toContain("send");
   });
 });
