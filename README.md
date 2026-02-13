@@ -1,4 +1,4 @@
-# puredata-mcp
+# synthlab-mcp-server
 
 **MCP Server for Pure Data & VCV Rack** — Compose songs, generate patches, analyze signal flow, and control live synths through AI.
 
