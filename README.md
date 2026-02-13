@@ -1,6 +1,6 @@
 # puredata-mcp
 
-**MCP Server for Pure Data & VCV Rack** — Parse, generate, analyze, and control Pd patches + generate VCV Rack patches through AI.
+**MCP Server for Pure Data & VCV Rack** — Compose songs, generate patches, analyze signal flow, and control live synths through AI.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-Protocol-blueviolet)](https://modelcontextprotocol.io/)
@@ -13,64 +13,69 @@
 
 An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI assistants deep understanding of [Pure Data](https://puredata.info/) and [VCV Rack](https://vcvrack.com/) patches. 9 tools + 1 prompt, 580 tests, zero runtime dependencies beyond MCP SDK + Zod.
 
-**Pure Data** — parse `.pd` files into a structured AST, generate patches from specs, analyze signal flow, template 11 instruments, assemble multi-module racks with wiring, map MIDI hardware, send OSC/FUDI in real time.
+**Pure Data** — compose full songs from genre descriptions, parse `.pd` files into typed ASTs, generate patches from specs, analyze signal flow, template 11 instruments, assemble multi-module racks with inter-module wiring, map MIDI hardware, send OSC/FUDI in real time.
 
-**VCV Rack** — generate `.vcv` patch files from module + cable specs, with a registry of 15 plugins (~400 modules) scraped from C++ source.
+**VCV Rack** — generate `.vcv` patch files from module + cable specs, with a registry of 15 plugins (~400 modules) auto-scraped from C++ source.
 
-> *"Create a rack with clock, sequencer, synth with saw wave, reverb, and mixer — wire them together, add K2 controller"* → complete `.pd` rack that opens in Pure Data with hardware MIDI control
+> *"Compose a dark techno track with drums, bass, and an arpeggio — use K2 controller"* → complete `.pd` rack with clock, sequencer, synths, mixer, reverb, and MIDI mapping
 
-> *"Create a VCV Rack patch with VCO → VCF → VCA → AudioInterface2, saw wave into lowpass filter"* → `.vcv` file that loads in VCV Rack 2.x
+> *"Create a rack with clock, sequencer, saw synth, reverb, and mixer — wire them together"* → individual `.pd` files + combined rack that opens in Pure Data
 
-> *"Compose a dark techno track with drums, bass, and an arpeggio — use K2 controller"* → complete rack with clock, sequencer, synths, mixer, reverb, and MIDI mapping
+> *"Create a VCV Rack patch with VCO → VCF → VCA → AudioInterface2"* → `.vcv` file that loads in VCV Rack 2.x
 
 ---
 
 ## Architecture
 
 ```
-+-------------------------------------------------------------------+
-|                      Claude / AI Client                           |
-+---------------------------+---------------------------------------+
-                            | MCP (stdio)
-+---------------------------v---------------------------------------+
-|                   puredata-mcp-server                              |
++--------------------------------------------------------------------+
+|                       Claude / AI Client                           |
++----------------------------+---------------------------------------+
+                             | MCP (stdio)
++----------------------------v---------------------------------------+
+|                    puredata-mcp-server                              |
 |                                                                    |
-|  9 MCP Tools + 1 Prompt                                              |
-|  +------------------+  +------------------+  +-----------------+  |
-|  |   parse_patch    |  |  generate_patch  |  |  analyze_patch  |  |
-|  |  validate_patch  |  | create_template  |  |   create_rack   |  |
-|  |  send_message    |  |  generate_vcv    |  | compose_patch   |  |
-|  +--------+---------+  +--------+---------+  +--------+--------+  |
-|           |                     |                      |          |
-|  +--------v---------------------v----------------------v--------+ |
-|  |                      Pd Core Engine                          | |
-|  |  Parser (.pd→AST) | Serializer (AST→.pd) | Validator        | |
-|  |  Object Registry (~100 Pd-vanilla objects)                   | |
-|  +--------------------------------------------------------------+ |
+|  9 MCP Tools + 1 Prompt                                            |
+|  +------------------+  +------------------+  +------------------+  |
+|  |   parse_patch    |  |  generate_patch  |  |  analyze_patch   |  |
+|  |  validate_patch  |  | create_template  |  |   create_rack    |  |
+|  |  send_message    |  |   generate_vcv   |  |  compose_patch   |  |
+|  +--------+---------+  +--------+---------+  +--------+---------+  |
+|           |                     |                      |           |
+|  +--------v---------------------v----------------------v---------+ |
+|  |                       Pd Core Engine                          | |
+|  |  Parser (.pd→AST) | Serializer (AST→.pd) | Validator         | |
+|  |  Object Registry (~100 Pd-vanilla objects)                    | |
+|  +---------------------------------------------------------------+ |
 |                                                                    |
-|  +--------------------------------------------------------------+ |
-|  |           Template Engine (11 templates)                      | |
+|  +---------------------------------------------------------------+ |
+|  |            Template Engine (11 templates)                     | |
 |  |  synth | seq | drums | reverb | mixer | clock | bridge        | |
 |  |  chaos | maths | turing-machine | granular                    | |
-|  +--------------------------------------------------------------+ |
+|  +---------------------------------------------------------------+ |
 |                                                                    |
-|  +--------------------------------------------------------------+ |
-|  |    Rack Builder + Wiring + MIDI Controllers                   | |
+|  +---------------------------------------------------------------+ |
+|  |     Rack Builder + Wiring + MIDI Controllers                  | |
 |  |  throw~/catch~ (audio) | send/receive (control)               | |
 |  |  K2 (abs+rel+trigger) | MicroFreak (output) | TR-8S (bidir)  | |
-|  +--------------------------------------------------------------+ |
+|  +---------------------------------------------------------------+ |
 |                                                                    |
-|  +--------------------------------------------------------------+ |
-|  |           VCV Rack Generator                                  | |
+|  +---------------------------------------------------------------+ |
+|  |     Song Composer (genre → wired rack)                        | |
+|  |  9 genres | 7 moods | 8 roles | 10 scales | auto-wiring      | |
+|  +---------------------------------------------------------------+ |
+|                                                                    |
+|  +---------------------------------------------------------------+ |
+|  |            VCV Rack Generator                                 | |
 |  |  15-plugin registry (~400 modules) from C++ source scraping   | |
 |  |  Fuzzy port/param resolution | HP positioning | Cable wiring  | |
-|  +--------------------------------------------------------------+ |
+|  +---------------------------------------------------------------+ |
 |                                                                    |
-|  +--------------------------------------------------------------+ |
-|  |           Network Layer (zero external deps)                  | |
+|  +---------------------------------------------------------------+ |
+|  |            Network Layer (zero external deps)                 | |
 |  |  OSC encoder (binary) | FUDI formatter (text)                 | |
 |  |  UDP sender (dgram) | TCP sender (net)                        | |
-|  +--------------------------------------------------------------+ |
+|  +---------------------------------------------------------------+ |
 +--------------------------------------------------------------------+
               |                                 |
     OSC (UDP) / FUDI (TCP)               .vcv file output
@@ -197,6 +202,61 @@ Auto-maps hardware controls to rack parameters. Generates `_controller.pd` (MIDI
 }
 ```
 
+### Song Composer — Genre-driven rack generation
+
+High-level creative interface: describe a song by genre, mood, tempo, key, and instruments — get a complete wired Pd rack with MIDI controller integration.
+
+**9 genres** with curated presets:
+
+| Genre | Default Tempo | Default Mood | Default Instruments |
+|-------|--------------|-------------|---------------------|
+| `ambient` | 70 | ethereal | pad, texture |
+| `techno` | 130 | dark | drums, bass, lead |
+| `house` | 124 | energetic | drums, bass, pad |
+| `dnb` | 174 | aggressive | drums, bass, lead |
+| `experimental` | 100 | dark | modulator, texture, sequence |
+| `idm` | 140 | ethereal | drums, arpeggio, modulator |
+| `minimal` | 125 | chill | drums, bass |
+| `drone` | 40 | melancholic | pad, pad |
+| `noise` | 120 | aggressive | texture, modulator, drums |
+
+**7 moods** adjust synthesis parameters (cutoff, reverb room size, drum tone): dark, bright, aggressive, chill, ethereal, melancholic, energetic.
+
+**8 instrument roles** map to templates with automatic multi-module expansion:
+
+| Role | Expands To | Wiring |
+|------|-----------|--------|
+| `lead` | synth (ADSR) | seq → note |
+| `bass` | synth (low octave, ADSR) | seq → note |
+| `pad` | synth (slow envelope) | — |
+| `drums` | drum-machine | clock → triggers |
+| `arpeggio` | sequencer + synth | clock → seq → synth |
+| `sequence` | sequencer | clock → seq |
+| `texture` | noise synth + granular | synth → granular |
+| `modulator` | turing-machine + synth | clock → turing → synth |
+
+**Auto-wiring engine** builds the full signal chain: clock → sequencers → synths → mixer → effects.
+
+**10 musical scales** (major, minor, dorian, phrygian, mixolydian, pentatonic-major/minor, chromatic, whole-tone, blues) x 12 root notes for sequencer note generation.
+
+The `song_analysis` MCP prompt guides Claude through Socratic questions to fill the spec before calling `compose_patch`.
+
+```json
+{
+  "genre": "dnb",
+  "tempo": 175,
+  "mood": "aggressive",
+  "key": { "root": "E", "scale": "minor" },
+  "instruments": [
+    { "role": "drums" },
+    { "role": "bass" },
+    { "role": "arpeggio" }
+  ],
+  "effects": ["reverb"],
+  "controller": { "device": "k2" }
+}
+```
+
 ### Live Control — OSC/FUDI messaging
 
 Send real-time control messages to a running Pd instance. Zero external dependencies — uses Node.js built-in `dgram` (UDP) and `net` (TCP).
@@ -254,61 +314,6 @@ Generates VCV Rack v2 patch files (plain JSON `.vcv` format) from module + cable
 }
 ```
 
-### Song Composer — Genre-driven rack generation
-
-High-level creative interface: describe a song by genre, mood, tempo, key, and instruments — get a complete wired Pd rack with MIDI controller integration.
-
-**9 genres** with curated presets:
-
-| Genre | Default Tempo | Default Mood | Default Instruments |
-|-------|--------------|-------------|---------------------|
-| `ambient` | 70 | ethereal | pad, texture |
-| `techno` | 130 | dark | drums, bass, lead |
-| `house` | 124 | energetic | drums, bass, pad |
-| `dnb` | 174 | aggressive | drums, bass, lead |
-| `experimental` | 100 | dark | modulator, texture, sequence |
-| `idm` | 140 | ethereal | drums, arpeggio, modulator |
-| `minimal` | 125 | chill | drums, bass |
-| `drone` | 40 | melancholic | pad, pad |
-| `noise` | 120 | aggressive | texture, modulator, drums |
-
-**7 moods** adjust synthesis parameters (cutoff, reverb room size, drum tone): dark, bright, aggressive, chill, ethereal, melancholic, energetic.
-
-**8 instrument roles** map to templates with automatic multi-module expansion:
-
-| Role | Expands To | Wiring |
-|------|-----------|--------|
-| `lead` | synth (ADSR) | seq → note |
-| `bass` | synth (low octave, ADSR) | seq → note |
-| `pad` | synth (slow envelope) | — |
-| `drums` | drum-machine | clock → triggers |
-| `arpeggio` | sequencer + synth | clock → seq → synth |
-| `sequence` | sequencer | clock → seq |
-| `texture` | noise synth + granular | synth → granular |
-| `modulator` | turing-machine + synth | clock → turing → synth |
-
-**Auto-wiring engine** builds the full signal chain: clock → sequencers → synths → mixer → effects.
-
-**10 musical scales** (major, minor, dorian, phrygian, mixolydian, pentatonic-major/minor, chromatic, whole-tone, blues) × 12 root notes for sequencer note generation.
-
-The `song_analysis` MCP prompt guides Claude through Socratic questions to fill the spec before calling `compose_patch`.
-
-```json
-{
-  "genre": "dnb",
-  "tempo": 175,
-  "mood": "aggressive",
-  "key": { "root": "E", "scale": "minor" },
-  "instruments": [
-    { "role": "drums" },
-    { "role": "bass" },
-    { "role": "arpeggio" }
-  ],
-  "effects": ["reverb"],
-  "controller": { "device": "k2" }
-}
-```
-
 ### Patch Analyzer — Deep structural analysis
 - **Object counts** by category (audio, control, MIDI, math, etc.)
 - **Signal flow graph** — adjacency list with topological sort (Kahn's algorithm), cycle detection
@@ -353,6 +358,8 @@ Open Claude Desktop and ask:
 
 > *"Create a VCV Rack patch with Fundamental VCO, VCF, and AudioInterface2 — saw output through lowpass filter to audio"*
 
+> *"Compose a dark techno track with drums, bass, and arpeggio"*
+>
 > *"Send /pd/tempo 140 to my running Pd instance"*
 
 ---
@@ -409,6 +416,19 @@ Assemble multiple modules into a rack with inter-module wiring and MIDI controll
 | `controller` | `object?` | MIDI controller: `{ device, midiChannel?, mappings? }` |
 | `outputDir` | `string?` | Directory to write all files |
 
+### `compose_patch`
+Generate a complete wired Pd rack from a high-level song description (genre, mood, tempo, key, instruments, effects, controller).
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `genre` | `string` | Genre preset (ambient, techno, house, dnb, experimental, idm, minimal, drone, noise) |
+| `tempo` | `number?` | Override BPM (clamped to genre range) |
+| `mood` | `string?` | Mood adjustment (dark, bright, aggressive, chill, ethereal, melancholic, energetic) |
+| `key` | `object?` | Musical key: `{ root: NoteName, scale: ScaleType }` |
+| `instruments` | `array?` | Instrument specs: `{ role, id?, template?, params? }` |
+| `effects` | `array?` | Effect chain: `["reverb", "granular"]` |
+| `controller` | `object?` | MIDI controller: `{ device, midiChannel?, mappings? }` |
+
 ### `send_message`
 Send a control message to a running Pd instance via OSC or FUDI.
 
@@ -430,19 +450,6 @@ Generate a VCV Rack `.vcv` patch file from module and cable specifications.
 | `outputPath` | `string?` | Write `.vcv` file (optional) |
 
 Supports 15 plugins with aliases: `"vcv"` → Fundamental, `"mi"` → AudibleInstruments, `"bg"` → Bogaudio, `"stoermelder"` → PackOne, etc.
-
-### `compose_patch`
-Generate a complete wired Pd rack from a high-level song description (genre, mood, tempo, key, instruments, effects, controller).
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `genre` | `string` | Genre preset (ambient, techno, house, dnb, experimental, idm, minimal, drone, noise) |
-| `tempo` | `number?` | Override BPM (clamped to genre range) |
-| `mood` | `string?` | Mood adjustment (dark, bright, aggressive, chill, ethereal, melancholic, energetic) |
-| `key` | `object?` | Musical key: `{ root: NoteName, scale: ScaleType }` |
-| `instruments` | `array?` | Instrument specs: `{ role, id?, template?, params? }` |
-| `effects` | `array?` | Effect chain: `["reverb", "granular"]` |
-| `controller` | `object?` | MIDI controller: `{ device, midiChannel?, mappings? }` |
 
 ### MCP Prompts
 
@@ -638,15 +645,17 @@ npm run build                # Rebundle
 
 ## Roadmap
 
-- [x] **Phase 1**: Core parser + serializer + MCP scaffold
-- [x] **Phase 2**: Patch analysis + validation (object registry, signal flow, DSP chains, complexity)
-- [x] **Phase 3**: Template engine — 11 parameterized instruments with modular topology
-- [x] **Phase 4**: `create_from_template` tool + `create_rack` (multi-module assembly)
-- [x] **Phase 5**: Inter-module wiring (throw~/catch~, send/receive, clock sync)
-- [x] **Phase 7**: MIDI hardware integration (K2, MicroFreak, TR-8S controller profiles)
-- [x] **Phase 8**: Live control via OSC/FUDI (`send_message` tool + `bridge` template)
-- [x] **Phase 10**: VCV Rack patch generation (`generate_vcv` tool + 15-plugin registry)
-- [x] **Phase 9**: Song composer (`compose_patch` tool + `song_analysis` prompt — genre/mood/tempo → wired rack)
+All phases complete.
+
+1. **Core** — Parser + serializer + MCP scaffold
+2. **Analysis** — Object registry, signal flow graph, DSP chain detection, complexity scoring
+3. **Templates** — 11 parameterized instruments with modular two-tier composition
+4. **Rack Builder** — `create_from_template` + `create_rack` (multi-module assembly)
+5. **Wiring** — Inter-module buses (throw~/catch~, send/receive, clock sync)
+6. **MIDI Controllers** — K2, MicroFreak, TR-8S profiles with auto-mapping
+7. **Live Control** — OSC/FUDI messaging (`send_message` tool + `bridge` template)
+8. **VCV Rack** — `.vcv` patch generation with 15-plugin registry (~400 modules)
+9. **Song Composer** — `compose_patch` tool + `song_analysis` Socratic prompt
 
 ---
 
