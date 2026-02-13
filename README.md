@@ -2,16 +2,17 @@
 
 **MCP Server for Pure Data & VCV Rack** — Compose songs, generate patches, analyze signal flow, and control live synths through AI.
 
+[![CI](https://github.com/j0KZ/mcp_pure_data/actions/workflows/ci.yml/badge.svg)](https://github.com/j0KZ/mcp_pure_data/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/puredata-mcp-server)](https://www.npmjs.com/package/puredata-mcp-server)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-Protocol-blueviolet)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-615%2F615-brightgreen)]()
 
 ---
 
 ## What is this?
 
-An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI assistants deep understanding of [Pure Data](https://puredata.info/) and [VCV Rack](https://vcvrack.com/) patches. 10 tools + 1 prompt, 615 tests, zero runtime dependencies beyond MCP SDK + Zod.
+An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI assistants deep understanding of [Pure Data](https://puredata.info/) and [VCV Rack](https://vcvrack.com/) patches. 10 tools + 1 prompt, 619 tests, zero runtime dependencies beyond MCP SDK + Zod.
 
 **Pure Data** — compose full songs from genre descriptions, parse `.pd` files into typed ASTs, generate patches from specs, analyze signal flow, template 11 instruments, assemble multi-module racks with inter-module wiring, map MIDI hardware, send OSC/FUDI in real time.
 
@@ -574,7 +575,7 @@ scripts/                        # ~700 lines
   parse-svg-width.ts            # SVG panel width -> HP conversion
   update-readme-stats.ts        # Auto-update README tool/test counts
 
-tests/                          # 615 tests, ~6,500 lines
+tests/                          # 619 tests, ~6,500 lines
   parser.test.ts                # 14 — parsing, subpatches, arrays, edge cases
   serializer.test.ts            # 8 — round-trip, spec builder, escaping
   object-registry.test.ts       # 37 — port counts, aliases, variable objects
@@ -629,7 +630,7 @@ tests/                          # 615 tests, ~6,500 lines
 ```bash
 npm run build        # Compile with tsup (ESM + declarations)
 npm run dev          # Watch mode
-npm run test         # Run vitest (615 tests)
+npm run test         # Run vitest (619 tests)
 npm run lint         # Type-check with tsc --noEmit
 npm run inspect      # Test server with MCP Inspector
 ```
@@ -656,7 +657,7 @@ npm run update-stats         # Patches README with actual tool + test counts
 | **TypeScript** (strict mode) | Type-safe parser and serializer |
 | **MCP SDK** (`@modelcontextprotocol/sdk`) | Protocol implementation |
 | **Zod** | Runtime input validation |
-| **Vitest** | Test runner (615 tests) |
+| **Vitest** | Test runner (619 tests) |
 | **tsup** | Bundler (ESM output, 1.04 MB) |
 | **tsx** | TypeScript execution for build scripts |
 | **Zero runtime deps** beyond MCP SDK + Zod | OSC via `dgram`, FUDI via `net` |

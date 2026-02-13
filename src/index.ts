@@ -28,7 +28,7 @@ import { composePatchSchema } from "./schemas/compose.js";
 
 const server = new McpServer({
   name: "puredata-mcp-server",
-  version: "0.1.0",
+  version: PACKAGE_VERSION,
 });
 
 // ---------------------------------------------------------------------------
