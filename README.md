@@ -1,9 +1,9 @@
-# synthlab-mcp-server
+# synthlab-mcp
 
-**MCP Server for Pure Data & VCV Rack** — Compose songs, generate patches, analyze signal flow, and control live synths through AI.
+**AI-powered synthesis lab** — Compose songs, generate Pure Data & VCV Rack patches, map MIDI controllers, and control live synths through Claude.
 
-[![CI](https://github.com/j0KZ/mcp_pure_data/actions/workflows/ci.yml/badge.svg)](https://github.com/j0KZ/mcp_pure_data/actions/workflows/ci.yml)
-[![npm](https://img.shields.io/npm/v/puredata-mcp-server)](https://www.npmjs.com/package/puredata-mcp-server)
+[![CI](https://github.com/j0KZ/synthlab-mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/j0KZ/synthlab-mcp-server/actions/workflows/ci.yml)
+[![npm](https://img.shields.io/npm/v/synthlab-mcp-server)](https://www.npmjs.com/package/synthlab-mcp-server)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.5-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-Protocol-blueviolet)](https://modelcontextprotocol.io/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
@@ -12,11 +12,13 @@
 
 ## What is this?
 
-An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that gives AI assistants deep understanding of [Pure Data](https://puredata.info/) and [VCV Rack](https://vcvrack.com/) patches. 10 tools + 1 prompt, 619 tests, zero runtime dependencies beyond MCP SDK + Zod.
+An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that turns Claude into a full synthesis workstation. 10 tools + 1 prompt, 619 tests, zero runtime dependencies beyond MCP SDK + Zod.
 
-**Pure Data** — compose full songs from genre descriptions, parse `.pd` files into typed ASTs, generate patches from specs, analyze signal flow, template 11 instruments, assemble multi-module racks with inter-module wiring, map MIDI hardware, send OSC/FUDI in real time.
+**Pure Data** — compose full songs from genre descriptions, parse `.pd` files into typed ASTs, generate patches from specs, analyze signal flow, template 11 instruments, assemble multi-module racks with inter-module wiring, send OSC/FUDI in real time.
 
 **VCV Rack** — generate `.vcv` patch files from module + cable specs, with a registry of 15 plugins (~400 modules) auto-scraped from C++ source.
+
+**MIDI Controllers** — auto-map hardware controls (Korg nanoKONTROL2, Arturia MicroFreak, Roland TR-8S) to rack parameters with absolute, relative, and trigger modes.
 
 > *"Compose a dark techno track with drums, bass, and an arpeggio — use K2 controller"* → complete `.pd` rack with clock, sequencer, synths, mixer, reverb, and MIDI mapping
 
@@ -34,7 +36,7 @@ An [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) server that 
 +----------------------------+---------------------------------------+
                              | MCP (stdio)
 +----------------------------v---------------------------------------+
-|                    puredata-mcp-server                              |
+|                      synthlab-mcp-server                             |
 |                                                                    |
 |  10 MCP Tools + 1 Prompt                                           |
 |  +------------------+  +------------------+  +------------------+  |
@@ -329,8 +331,8 @@ Generates VCV Rack v2 patch files (plain JSON `.vcv` format) from module + cable
 ### 1. Clone and build
 
 ```bash
-git clone https://github.com/j0KZ/mcp_pure_data.git
-cd mcp_pure_data
+git clone https://github.com/j0KZ/synthlab-mcp-server.git
+cd synthlab-mcp-server
 npm install
 npm run build
 ```
@@ -342,9 +344,22 @@ Add to your `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "puredata-mcp": {
+    "synthlab": {
+      "command": "npx",
+      "args": ["synthlab-mcp-server"]
+    }
+  }
+}
+```
+
+Or from a local clone:
+
+```json
+{
+  "mcpServers": {
+    "synthlab": {
       "command": "node",
-      "args": ["/absolute/path/to/mcp_pure_data/dist/index.js"]
+      "args": ["/absolute/path/to/synthlab-mcp-server/dist/index.js"]
     }
   }
 }
@@ -588,7 +603,7 @@ tests/                          # 619 tests, ~6,500 lines
   templates/
     compose.test.ts             # 8 — module composition, wiring, autoLayout
     modules.test.ts             # 17 — all module variants
-    templates.test.ts           # 42 — complete template round-trips
+    templates.test.ts           # 46 — complete template round-trips
     edge-cases.test.ts          # 106 — param validation, coercion, boundaries
     bridge.test.ts              # 3 — OSC/FUDI bridge variants
   network/

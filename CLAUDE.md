@@ -1,7 +1,7 @@
-# Pure Data MCP Server
+# synthlab-mcp-server
 
 ## Project Overview
-MCP (Model Context Protocol) server that enables Claude to read, analyze, generate, and control Pure Data (Pd) patches. Targets Pd-vanilla compatible patches with focus on MIDI workflows.
+MCP server that turns Claude into a synthesis workstation — compose songs, generate Pure Data & VCV Rack patches, map MIDI controllers, and control live synths. Targets Pd-vanilla compatible patches with focus on MIDI workflows.
 
 ## Architecture
 - **Runtime**: Node.js (TypeScript)
@@ -11,7 +11,7 @@ MCP (Model Context Protocol) server that enables Claude to read, analyze, genera
 
 ## Directory Structure
 ```
-pd-mcp/
+synthlab-mcp-server/
 ├── src/
 │   ├── index.ts              # MCP server entry point
 │   ├── tools/

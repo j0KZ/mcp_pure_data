@@ -1,11 +1,11 @@
 {
-  "name": "puredata-mcp-server",
+  "name": "synthlab-mcp-server",
   "version": "0.9.0",
   "description": "MCP Server for Pure Data & VCV Rack — parse, generate, analyze, and control Pd patches and VCV Rack modules with AI",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "puredata-mcp-server": "./dist/index.js"
+    "synthlab-mcp-server": "./dist/index.js"
   },
   "files": [
     "dist",
@@ -43,7 +43,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/j0KZ/mcp_pure_data.git"
+    "url": "git+https://github.com/j0KZ/synthlab-mcp-server.git"
   },
   "author": "j0KZ",
   "license": "MIT",

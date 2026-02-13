@@ -1,9 +1,9 @@
-# puredata-mcp
+# synthlab-mcp
 
 > MCP Server for Pure Data — parse, generate, analyze, and control Pd patches with AI
 
-**Repo name**: `puredata-mcp`  
-**npm package**: `puredata-mcp-server`  
+**Repo name**: `synthlab-mcp`  
+**npm package**: `synthlab-mcp-server`  
 **License**: MIT  
 **Language**: TypeScript  
 **Transport**: stdio (local, compatible with Claude Desktop / Claude Code / Cursor)
@@ -12,7 +12,7 @@
 
 ## Competitive Analysis
 
-| Feature | nikmaniatis/Pd-MCP-Server | **puredata-mcp** (ours) |
+| Feature | nikmaniatis/Pd-MCP-Server | **synthlab-mcp** (ours) |
 |---|---|---|
 | Parse .pd files | ❌ | ✅ Full AST |
 | Generate .pd files | ❌ | ✅ Programmatic |
@@ -28,7 +28,7 @@
 ## Architecture
 
 ```
-puredata-mcp-server/
+synthlab-mcp-server/
 ├── package.json
 ├── tsconfig.json
 ├── README.md
@@ -215,7 +215,7 @@ interface PdConnection {
 ### Phase 5: Portfolio Polish (Week 4)
 1. README with badges, GIF demos, architecture diagram
 2. Example workflows with screenshots
-3. npm publish setup (`npx puredata-mcp-server`)
+3. npm publish setup (`npx synthlab-mcp-server`)
 4. GitHub Actions CI
 5. CHANGELOG, contributing guide
 6. Example patches that showcase the tool
@@ -246,7 +246,7 @@ interface PdConnection {
 ## README Structure (Portfolio Sell)
 
 ```markdown
-# 🎛️ puredata-mcp
+# 🎛️ synthlab-mcp
 
 > AI-powered tools for Pure Data — parse, generate, analyze, and control patches
 
@@ -296,7 +296,7 @@ a live performance — all through natural language.
 ## Commands to Start
 
 ```bash
-mkdir puredata-mcp-server && cd puredata-mcp-server
+mkdir synthlab-mcp-server && cd synthlab-mcp-server
 npm init -y
 npm i @modelcontextprotocol/sdk zod
 npm i -D typescript vitest tsup @types/node
@@ -312,5 +312,5 @@ npx tsc --init
 - [ ] Roundtrip (parse → serialize) preserves all connections and objects
 - [ ] Templates produce working audio in Pd
 - [ ] OSC messages reach a running Pd instance
-- [ ] `npx puredata-mcp-server` works out of the box
+- [ ] `npx synthlab-mcp-server` works out of the box
 - [ ] README gets you from zero to working in 2 minutes

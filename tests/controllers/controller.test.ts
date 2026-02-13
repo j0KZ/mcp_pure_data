@@ -462,7 +462,12 @@ describe("K2 Deck config generator", () => {
 
     expect(abs["16"]).toBeDefined();
     expect(abs["16"].name).toContain("Mixer Vol");
-    expect(abs["16"].action).toBe("noop");
+    expect(abs["16"].action).toBe("osc_send");
+    expect((abs["16"] as Record<string, unknown>).osc_host).toBe("127.0.0.1");
+    expect((abs["16"] as Record<string, unknown>).osc_port).toBe(9000);
+    expect((abs["16"] as Record<string, unknown>).osc_address).toBe("/pd/param");
+    expect((abs["16"] as Record<string, unknown>).osc_param).toBe("test__p__vol");
+    expect((abs["16"] as Record<string, unknown>).curve).toBe("linear");
     expect(abs["17"]).toBeDefined();
     expect(abs["17"].name).toContain("Synth Amp");
   });
@@ -538,7 +543,10 @@ describe("K2 Deck config generator", () => {
     const rel = m.cc_relative as Record<string, { name: string; action: string }>;
     expect(rel["0"]).toBeDefined();
     expect(rel["0"].name).toContain("cutoff");
-    expect(rel["0"].action).toBe("noop");
+    expect(rel["0"].action).toBe("osc_send_relative");
+    expect((rel["0"] as Record<string, unknown>).osc_param).toBe("synth__p__cutoff");
+    expect((rel["0"] as Record<string, unknown>).step).toBeCloseTo(1 / 127);
+    expect((rel["0"] as Record<string, unknown>).initial).toBe(0.5);
   });
 
   // 19. Includes note_on section for button mappings
@@ -559,7 +567,10 @@ describe("K2 Deck config generator", () => {
     const noteSection = m.note_on as Record<string, { name: string; action: string }>;
     expect(noteSection["40"]).toBeDefined();
     expect(noteSection["40"].name).toContain("mute");
-    expect(noteSection["40"].action).toBe("noop");
+    expect(noteSection["40"].action).toBe("osc_send_trigger");
+    expect((noteSection["40"] as Record<string, unknown>).osc_param).toBe("mixer__p__mute");
+    expect((noteSection["40"] as Record<string, unknown>).mode).toBe("toggle");
+    expect((noteSection["40"] as Record<string, unknown>).led).toEqual({ color: "amber", mode: "toggle" });
   });
 
   // 20. Encoder CC 0-3 maps to columns 0-3 for LED feedback

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 /**
- * puredata-mcp-server — MCP entry point.
+ * synthlab-mcp-server — MCP entry point.
  *
  * Registers tools and starts the stdio transport.
  */
@@ -27,7 +27,7 @@ import { executeComposePatch } from "./tools/compose.js";
 import { composePatchSchema } from "./schemas/compose.js";
 
 const server = new McpServer({
-  name: "puredata-mcp-server",
+  name: "synthlab-mcp-server",
   version: PACKAGE_VERSION,
 });
 
