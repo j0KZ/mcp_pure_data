@@ -139,6 +139,70 @@ describe("send_message tool", () => {
     expect(result).toContain("140");
   });
 
+  // -----------------------------------------------------------------------
+  // Branch coverage: boolean protocol coercion (Claude Desktop quirk)
+  // -----------------------------------------------------------------------
+  it("coerces boolean protocol to 'osc'", async () => {
+    const { port } = await startUdpServer();
+
+    const result = await executeSendMessage({
+      protocol: true as unknown as "osc",
+      port,
+      address: "/pd/bang",
+    });
+
+    expect(result).toContain("OSC");
+  });
+
+  // -----------------------------------------------------------------------
+  // Branch coverage: FUDI strips leading slash (not /pd/ prefix)
+  // -----------------------------------------------------------------------
+  it("FUDI strips leading slash from non-/pd/ address", async () => {
+    const { port, received } = await startTcpServer();
+
+    await executeSendMessage({
+      protocol: "fudi",
+      port,
+      address: "/tempo",
+      args: [130],
+    });
+
+    await new Promise((r) => setTimeout(r, 200));
+
+    const data = received.join("");
+    expect(data).toBe("tempo 130;\n");
+  });
+
+  // -----------------------------------------------------------------------
+  // Branch coverage: FUDI TCP response (non-empty)
+  // -----------------------------------------------------------------------
+  it("includes TCP response in output when server responds", async () => {
+    // Custom TCP server that echoes a response
+    const { port } = await new Promise<{ port: number }>((resolve) => {
+      const server = net.createServer((socket) => {
+        socket.on("data", () => {
+          socket.write("ok\n");
+          socket.end();
+        });
+      });
+      servers.push(server);
+      server.listen(0, "127.0.0.1", () => {
+        const addr = server.address() as net.AddressInfo;
+        resolve({ port: addr.port });
+      });
+    });
+
+    const result = await executeSendMessage({
+      protocol: "fudi",
+      port,
+      address: "tempo",
+      args: [120],
+    });
+
+    expect(result).toContain("Response:");
+    expect(result).toContain("ok");
+  });
+
   it("defaults to port 9000 for OSC and 3000 for FUDI", async () => {
     // We can't actually test sending to default ports (they might be in use),
     // but we can verify the confirmation string shows the right port

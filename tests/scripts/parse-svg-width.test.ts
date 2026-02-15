@@ -21,4 +21,9 @@ describe("parseSvgWidth", () => {
     const svg = `<svg viewBox="0 0 100 380">`;
     expect(parseSvgWidth(svg)).toBe(10);
   });
+
+  it("returns default 10 HP for zero or negative width", () => {
+    expect(parseSvgWidth(`<svg width="0mm" height="128.5mm">`)).toBe(10);
+    expect(parseSvgWidth(`<svg width="-50mm" height="128.5mm">`)).toBe(10);
+  });
 });
